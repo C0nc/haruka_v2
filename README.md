@@ -1,0 +1,84 @@
+# Haruka v2 — spatial contrastive decomposition
+
+Extends [Haruka](https://github.com/C0nc/Haruka) (contrastive VAE for salient/background
+spatial-domain discovery) with a graph-attention **spatial latent** in the style of
+[SIMVI](https://github.com/KlugerLab/SIMVI), and rebuilds the evaluation on a ground-truth
+spatial simulator with **multi-seed, mode-fraction** scoring.
+
+> Research code. Paths are absolute to the development machine; adapt before running.
+
+## Layout
+
+| dir | contents |
+|---|---|
+| `src/` | model + utilities: `haruka_spatial.py` (HarukaSpatial), `haruka_cluster.py` (FastCluster), `haruka_leiden.py` (spatially-blended Leiden), `haruka_sim.py` (validated simulator), `haruka_metrics.py`, `stack_contrast.py` (chunked axial baseline) |
+| `contrastivevi_patch/` | the modified `scvi/external/contrastivevi/` module files — the actual model changes; drop into a scvi-tools 1.2.x editable install |
+| `scripts/` | training / evaluation / plotting entry points |
+| `diagnostics/` | mechanism probes (attach-point, random-graph, mode-selectability) |
+| `benchmarks/` | per-seed result `.jsonl` and summary figures |
+
+## The model
+
+Three latents. Background `z` (shared across conditions) and salient `s` (condition-specific,
+zeroed on controls) are the original Haruka pair. The addition is a spatial latent
+
+    z_sp = GATv2(neighbours' z[:, -n_spatial:])      # add_self_loops=False
+
+concatenated into the decoder: `cat([z, s, z_sp])`. Opt-in via `n_spatial_latent > 0`;
+`spatial_attach ∈ {background, salient, both}` selects which encoder the GAT reads.
+`n_spatial_latent=0` reproduces the original model.
+
+```python
+from haruka_spatial import HarukaSpatial
+h = HarukaSpatial(adata, cov_gene_num=32, k_spatial=8, library_key="slice_id")
+h.construct_cov(); h.prepare_spatial_graph()
+h.setup_model(latent_dim=32, n_spatial_latent=16, spatial_attach="background",
+              kl_spatial_weight=0.01, reg_to_use="mi", lam_mi=5.0, me_reduction="sum",
+              condition_key="condition", condition_label="disease")
+h.train(max_epochs=400, batch_size=512, plan_kwargs=dict(lr=1e-3))
+h.extract_rep(n_layer=2)
+h.cluster(cluster_method="gmm", n_pcs=50)     # full-cov GMM on PCA-50
+```
+
+## Findings (LPC simulation, ≥12 seeds/variant)
+
+Scored by **mode fraction** — share of seeds with background-ARI-vs-architecture > 0.8 AND
+background-ARI-vs-condition < 0.15 — because the outcome is **bimodal**, so single runs and
+cross-seed means are both misleading (`scripts/rescore_joint.py`, `benchmarks/`).
+
+| variant | background stability | niche recovery (τ=0.7) |
+|---|---|---|
+| vanilla (no spatial) | 0/12 | n/a |
+| **`spatial_attach="background"`** | **7–8/12** | 1–2/12 |
+| `spatial_attach="salient"` | 0/12 | 3–4/12 |
+| `spatial_attach="both"` (2×2) | 0/12 | 8–9/12 |
+
+- **`spatial_attach="background"` is the recommended configuration** — it takes the model from
+  *never* cleanly separating condition from architecture to doing so ~⅔ of the time.
+- **Stability and niche recovery could not be obtained together** in any architecture tried;
+  the 2×2 recovers niches but collapses the background latent *on this simulation's contiguous
+  lesion*. On real diffuse-perturbation data (SPAC, `scripts/run_spac_feasibility.py`) the 2×2
+  does **not** collapse — background arm-leakage 0.541 vs 0.588 for `background` — so that failure
+  is geometry-specific, not intrinsic.
+- **Clustering:** full-covariance GMM on PCA-50 beats KMeans on the (elongated) background
+  representation (paired +0.153) and ties it on salient; spatially-blended Leiden helps background
+  but destroys the salient/lesion boundary — use GMM.
+
+### Verified upstream bug fixes (independent of the architecture)
+- `batch_size` was silently ignored (`.pop` stripped it → loader default 4096); fixed in
+  `contrastivevi_patch/_contrastive_data_splitting.py`.
+- COVET reconstruction term was numerically inert at realistic gene counts (mean-vs-sum reduction,
+  ~1e-5 of the loss at 16k genes); `me_reduction="sum"` makes it contribute.
+- `compute_covet` silently degrades to a cross-slice kNN on a misnamed batch column; guard added.
+
+## Honest limitations
+- Validated on a synthetic simulator (`haruka_sim.py`, self-checks pass: niche factor unrecoverable
+  from own expression, recoverable from neighbours). Real-tissue behaviour is untested beyond the
+  SPAC feasibility run, which has known confounds (guide≡clone≡location, depth-driven detection).
+- The background/salient separation lands in a contaminated optimum ~⅓ of the time; no per-run
+  selector for the good mode was found (loss does not separate the modes).
+- No validated *mechanism* for why `spatial_attach="background"` works; several hypotheses were
+  tested and refuted (see `diagnostics/`).
+
+## Acknowledgement
+Builds on Haruka, scVI-tools, contrastiveVI, CellCharter, and the SIMVI and Arc `stack` designs.

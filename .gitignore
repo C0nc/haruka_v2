@@ -1,0 +1,17 @@
+# data & large artifacts — never commit
+*.h5ad
+*.h5
+*.loom
+*.mtx
+data/
+outputs/*.h5ad
+# GWAS / sumstats
+*.sumstats.gz
+*.tsv.gz
+*.vcf*
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# scratch
+/tmp/
