@@ -260,6 +260,32 @@ def decode_niche(
     )
 
 
+def output_dir(args) -> str:
+    """<out_root>/<data stem>/<run name>; the run name encodes the decoder and batch settings."""
+    tag = os.path.basename(args.data).removesuffix(".h5ad")
+    run_name = (
+        f"haruka_shared_full_niche_seed{args.seed}"
+        if args.direct_only
+        else f"haruka_shared_full_niche_mender_seed{args.seed}"
+    )
+    if args.neighbor_expression_mode == "composition_gated":
+        run_name = run_name.replace(
+            f"_seed{args.seed}",
+            f"_compgated_seed{args.seed}",
+        )
+    if args.decoder_batch_dim > 0:
+        run_name = run_name.replace(
+            f"_seed{args.seed}",
+            f"_decoderbatch{args.decoder_batch_dim}_seed{args.seed}",
+        )
+    if args.batch_injection_mode != "all":
+        run_name = run_name.replace(
+            f"_seed{args.seed}",
+            f"_batchmode-{args.batch_injection_mode}_seed{args.seed}",
+        )
+    return os.path.join(args.out_root, tag, run_name)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -423,6 +449,12 @@ def main() -> None:
         args.zs_independence_penalty = (
             10.0 if args.neighbor_expression_mode == "composition_gated" else 25.0
         )
+    # Reuse a finished fit (e.g. unpacked from the published fitted h5ad) unless HARUKA_REFIT=1.
+    done = [os.path.join(output_dir(args), f) for f in ("background.npy", "salient.npy", "obs_names.npy", "meta.json")]
+    done += [os.path.join(output_dir(args), f"null_shuffled_s_composition_shift_{k}.npy") for k in range(args.shuffled_s_null)]
+    if os.environ.get("HARUKA_REFIT") != "1" and all(os.path.exists(f) for f in done):
+        print(f"[Haruka] using the existing fit in {output_dir(args)} (set HARUKA_REFIT=1 to refit)", flush=True)
+        return
 
     import scvi
     from scvi import REGISTRY_KEYS
@@ -709,28 +741,7 @@ def main() -> None:
                 return_diagnostics=True,
             )
 
-    tag = os.path.basename(args.data).removesuffix(".h5ad")
-    run_name = (
-        f"haruka_shared_full_niche_seed{args.seed}"
-        if args.direct_only
-        else f"haruka_shared_full_niche_mender_seed{args.seed}"
-    )
-    if args.neighbor_expression_mode == "composition_gated":
-        run_name = run_name.replace(
-            f"_seed{args.seed}",
-            f"_compgated_seed{args.seed}",
-        )
-    if args.decoder_batch_dim > 0:
-        run_name = run_name.replace(
-            f"_seed{args.seed}",
-            f"_decoderbatch{args.decoder_batch_dim}_seed{args.seed}",
-        )
-    if args.batch_injection_mode != "all":
-        run_name = run_name.replace(
-            f"_seed{args.seed}",
-            f"_batchmode-{args.batch_injection_mode}_seed{args.seed}",
-        )
-    out_dir = os.path.join(args.out_root, tag, run_name)
+    out_dir = output_dir(args)
     save_embeddings(
         out_dir,
         background=z,

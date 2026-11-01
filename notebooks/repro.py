@@ -62,6 +62,39 @@ def fetch(hf_file, dst):
     return dst
 
 
+FITTED = {'X_haruka_z': 'background', 'X_haruka_s': 'salient', 'haruka_D_z0': 'background_composition',
+          'haruka_D_zs': 'condition_composition', 'haruka_salient_shift': 'salient_composition_shift',
+          'haruka_M_z0': 'background_neighbor_mean', 'haruka_M_shift': 'salient_neighbor_mean_shift'}
+
+
+def fetch_fitted(hf_file, fit_dir):
+    """Download a published fitted h5ad and unpack its Haruka outputs into `fit_dir`, the layout a fresh fit writes.
+    The fit step then reuses them instead of refitting (set HARUKA_REFIT=1 to refit). An existing fit is kept."""
+    import json
+    import numpy as np
+    fit_dir = Path(fit_dir)
+    if not STAGES['download'] or os.environ.get('HARUKA_REFIT') == '1':
+        print(f'[skip: {"download stage off" if not STAGES["download"] else "HARUKA_REFIT=1"}] {hf_file}')
+        return fit_dir
+    if (fit_dir / 'salient.npy').exists():
+        print(f'[fitted] {fit_dir} already has a fit, kept'); return fit_dir
+    from huggingface_hub import hf_hub_download
+    import anndata as ad
+    A = ad.read_h5ad(hf_hub_download(HF_REPO, hf_file, repo_type='dataset', local_dir=H / 'hf_data'), backed='r')
+    fit_dir.mkdir(parents=True, exist_ok=True)
+    m = A.obs['haruka_in_fit'].to_numpy().astype(bool)
+    for key in A.obsm.keys():
+        name = FITTED.get(key) or (f'null_shuffled_s_composition_shift_{key.rsplit("_", 1)[1]}' if key.startswith('haruka_null_shift_') else None)
+        if name: np.save(fit_dir / f'{name}.npy', np.asarray(A.obsm[key])[m].astype(np.float32))
+    np.save(fit_dir / 'obs_names.npy', A.obs_names.to_numpy()[m].astype(object), allow_pickle=True)
+    if 'haruka_M_z0' in A.obsm:   # direct-decoder spatial readouts = [composition, neighbour mean]
+        np.save(fit_dir / 'spatial.npy', np.concatenate([np.load(fit_dir / 'background_composition.npy'), np.load(fit_dir / 'background_neighbor_mean.npy')], 1))
+        np.save(fit_dir / 'salient_spatial.npy', np.concatenate([np.load(fit_dir / 'salient_composition_shift.npy'), np.load(fit_dir / 'salient_neighbor_mean_shift.npy')], 1))
+    json.dump(json.loads(A.uns['haruka']['fit_arguments_json']), open(fit_dir / 'meta.json', 'w'), indent=2)
+    print(f'[fitted] {hf_file} -> {fit_dir} ({int(m.sum())} cells)')
+    return fit_dir
+
+
 def require(*paths):
     """Check that inputs produced by an earlier stage exist."""
     miss = [str(p) for p in paths if not Path(p).exists()]

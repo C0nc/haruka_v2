@@ -19,8 +19,9 @@ DEFAULT_ARGS = """--seed 0 --max_epochs 150 \\
   --augmentation_mode sparse --num_workers 4 --direct_only"""
 
 HEADER = """import sys, pathlib; sys.path.insert(0, str(next(p for p in [pathlib.Path.cwd(), pathlib.Path.cwd() / 'notebooks'] if (p / 'repro.py').exists())))
-from repro import run, require, show, fetch, STAGES, H, WK, PY, PY_VIO, GPU
-# Default: end to end (download from Hugging Face -> fit -> analyses -> figure; hours on one GPU).
+from repro import run, require, show, fetch, fetch_fitted, STAGES, H, WK, PY, PY_VIO, GPU
+# Default: download inputs + the paper's fitted Haruka outputs from Hugging Face, then analyses -> figure.
+# The Haruka fit step reuses the unpacked fit; HARUKA_REFIT=1 (env) refits from scratch. Auxiliary fits (baselines, seeds) still run.
 # Redraw only from saved outputs: STAGES.update(download=False, fit=False, analysis=False)  (or env HARUKA_FIGURE_ONLY=1)
 # Rebuild the inputs from the raw public releases instead of Hugging Face: STAGES.update(data=True)
 print(H, STAGES)"""
@@ -38,6 +39,10 @@ def notebook(name, title, intro, steps, figures):
                         f'[{HF_REPO}](https://huggingface.co/datasets/{HF_REPO}) (cached in `hf_data/`) and linked to the '
                         'paths the scripts read. The data stage below rebuilds the same files from the raw releases and is off by default.'))
         cells.append(code('\n'.join(f"fetch('{f}', {dst})" for f, dst in HF_FILES[name])))
+        cells.append(md('The paper\'s default Haruka fit, published as fitted AnnData (input + z, s, predicted neighbourhoods; '
+                        'see the dataset card). It is unpacked into the fit folder, so the fit step below reuses it. '
+                        'Set `HARUKA_REFIT=1` before launching to refit instead.'))
+        cells.append(code('\n'.join(f"fetch_fitted('{f}', {dst})" for f, dst in HF_FITTED[name])))
     for kind, text in steps:
         cells.append(md(text) if kind == 'md' else code(text))
     cells.append(md('## Figure'))
@@ -59,6 +64,20 @@ HF_FILES = {
     '06_fibrosis': [('06_fibrosis/gse250346_unaffected_vs_all_fibrosis.h5ad', "H / 'bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad'"),
                     ('06_fibrosis/he_annot_matched.csv.gz', "WK / 'haruka_fibrosis_he/he_annot_matched.csv.gz'")],
     '07_kras': [('07_kras/mouselung_kras_xenium_clean_noC3.h5ad', "H / 'data/mouselung_kras_xenium_clean_noC3.h5ad'")],
+}
+
+RUN = 'haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
+HF_FITTED = {
+    '02_fig2_benchmark': [(f'fitted/02_fig2_benchmark/mouse_brain_{s}_paired_haruka_fitted.h5ad',
+                           f"H / 'bench_mouse_brain_scviva/results_shared_full_niche_compgated_lambda10/mouse_brain_{s}_paired/haruka_shared_full_niche_compgated_seed0'")
+                          for s in ['A8', 'A9', 'B17', 'B3', 'B5']],
+    '03_fig3_ad_plaque': [('fitted/03_fig3_ad_plaque/ad_haruka_fitted.h5ad', f"H / 'results_real_compgated_lambda10_samplebatch_sepheads/ad/{RUN}'"),
+                          ('fitted/03_fig3_ad_plaque/codex_wholeslice_all7_no_oligo_haruka_fitted.h5ad', f"H / 'results_codex_wholeslice/codex_wholeslice_all7_no_oligo/{RUN}'"),
+                          ('fitted/03_fig3_ad_plaque/codex_wholeslice_ctl3VsCtl14_haruka_fitted.h5ad', f"H / 'results_codex_wholeslice/codex_wholeslice_ctl3VsCtl14/{RUN}'")],
+    '04_exercise': [('fitted/04_exercise/exercise_old_full_haruka_fitted.h5ad', f"WK / 'haruka_exercise/results_w10_s100/exercise_old_full/{RUN}'")],
+    '05_petracer': [('fitted/05_petracer/petracer_M2-1_lineage_haruka_fitted.h5ad', f"H / 'bench_petracer_lineage/m2_lineage/fits/petracer_M2-1_lineage/{RUN}'")],
+    '06_fibrosis': [('fitted/06_fibrosis/gse250346_unaffected_vs_all_fibrosis_haruka_fitted.h5ad', f"H / 'results_real_compgated_nb_final/gse250346_unaffected_vs_all_fibrosis/{RUN}'")],
+    '07_kras': [('fitted/07_kras/mouselung_kras_xenium_clean_noC3_haruka_fitted.h5ad', f"H / 'results_kras_te_null/mouselung_kras_xenium_clean_noC3/{RUN}'")],
 }
 
 NOTEBOOKS = {}

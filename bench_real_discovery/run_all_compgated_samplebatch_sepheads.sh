@@ -36,6 +36,9 @@ run_one() {
     --target_label "$target_label" --cell_type_key "$cell_type_key" \
     --gene_likelihood "$likelihood" --neighbor_input_mode "$input_mode" \
     --assay_type "$assay" --n_top_genes "$n_hvg" "${common[@]}"
+  if [ ! -f "$model/salient_spatial.npy" ]; then   # fit unpacked from a fitted h5ad without neighbour-mean arrays
+    echo "===== skip CC + sample UMAP diagnostics for $study (no salient_spatial.npy) ====="; return 0
+  fi
   echo "===== CONDITION-ONLY CC $study ====="
   env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "$PY" "$CC" \
     --data "$data" --input-dir "$model" --output-dir "$cc_dir" \
@@ -49,7 +52,7 @@ run_one() {
 
 case "$GROUP" in
   large_kras)
-    run_one "KRAS Xenium" "$ROOT/../mouselung_kras_xenium_clean_noC3.h5ad" 32768 slice_id slice_id condition_label KRASi_treated celltype nb normalize sequencing 2000
+    run_one "KRAS Xenium" "$ROOT/data/mouselung_kras_xenium_clean_noC3.h5ad" 32768 slice_id slice_id condition_label KRASi_treated celltype nb normalize sequencing 2000
     ;;
   large_lung)
     run_one "GSE250346 lung fibrosis" "$ROOT/bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad" 32768 slice_id sample condition fibrosis cell_type nb normalize sequencing 0
