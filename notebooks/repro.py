@@ -11,7 +11,7 @@ PY = os.environ.get('HARUKA_PY', '/home/yancui/.conda/envs/haruka2/bin/python')
 ENV = {**os.environ, 'NUMPY_MADVISE_HUGEPAGE': '0', 'OPENBLAS_NUM_THREADS': '8', 'OMP_NUM_THREADS': '8', 'MKL_NUM_THREADS': '8'}
 
 # Stage switches. Default: redraw figures only. Set via env before launching jupyter, or edit in the notebook.
-STAGES = {s: os.environ.get(f'RUN_{s.upper()}', '1' if s == 'figure' else '0') == '1' for s in ('data', 'fit', 'analysis', 'figure')}
+STAGES = {s: os.environ.get(f'RUN_{s.upper()}', '1' if s == 'figure' else '0') == '1' for s in ('download', 'data', 'fit', 'analysis', 'figure')}
 
 
 def run(cmd, stage, cwd=None, env=None, log=None):

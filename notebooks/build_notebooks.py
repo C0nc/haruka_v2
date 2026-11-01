@@ -20,7 +20,8 @@ DEFAULT_ARGS = """--seed 0 --max_epochs 150 \\
 HEADER = """import sys; sys.path.insert(0, '/home/yancui/haruka_v2/notebooks')
 from repro import run, require, show, STAGES, H, PY
 # Default: figure stage only (redraw from saved analysis outputs). Turn on earlier stages to rerun them.
-# STAGES.update(data=True, fit=True, analysis=True)
+# Fresh machine: STAGES.update(download=True) fetches the preprocessed inputs (section 0), then fit=True, analysis=True.
+# STAGES.update(download=True, fit=True, analysis=True)
 print(STAGES)"""
 
 
@@ -31,6 +32,13 @@ def code(s): return nbf.v4.new_code_cell(s.strip())
 def notebook(name, title, intro, steps, figures):
     nb = nbf.v4.new_notebook(); nb.metadata['kernelspec'] = KERNEL
     cells = [md(f'# {title}\n\n{intro}'), code(HEADER)]
+    if name in HF_FILES:
+        cells.append(md('## 0 Preprocessed data (Hugging Face)\n\nSkip the data stage: download the ready-to-fit inputs from '
+                        f'[{HF_REPO}](https://huggingface.co/datasets/{HF_REPO}) and link them to the paths the scripts expect.'))
+        lines = [f"# {HF_REPO}/{f}  ->  {dst}" for f, dst in HF_FILES[name]]
+        cells.append(code('\n'.join(lines) + '\nDL = H / "hf_data"\n' + '\n'.join(
+            f"run(f'hf download {HF_REPO} {f} --repo-type dataset --local-dir {{DL}} && mkdir -p $(dirname {dst}) && ln -sfn {{DL}}/{f} {dst}', 'download')"
+            for f, dst in HF_FILES[name])))
     for kind, text in steps:
         cells.append(md(text) if kind == 'md' else code(text))
     cells.append(md('## Figure'))
@@ -39,6 +47,20 @@ def notebook(name, title, intro, steps, figures):
     nbf.write(nb, OUT / f'{name}.ipynb')
     print('wrote', name)
 
+
+HF_REPO = 'C1vy/haruka_v2_data'
+_FIG2 = [(f'02_fig2_benchmark/mouse_brain_{s}_paired.h5ad', f'bench_mouse_brain_scviva/data_composition_pairs_all/mouse_brain_{s}_paired.h5ad') for s in ['A8', 'A9', 'B17', 'B3', 'B5']]
+HF_FILES = {
+    '02_fig2_benchmark': _FIG2,
+    '03_fig3_ad_plaque': [('03_fig3_ad_plaque/ad_starmap.h5ad', 'bench_real_discovery/data/ad.h5ad'),
+                          ('03_fig3_ad_plaque/codex_wholeslice_all7_no_oligo.h5ad', 'bench_codex_cns_2026/wholeslice/codex_wholeslice_all7_no_oligo.h5ad'),
+                          ('03_fig3_ad_plaque/codex_wholeslice_ctl3VsCtl14.h5ad', 'bench_codex_cns_2026/wholeslice/codex_wholeslice_ctl3VsCtl14.h5ad')],
+    '04_exercise': [('04_exercise/exercise_old_full.h5ad', '/project/zhihuanglab/yancui/haruka_exercise/data/exercise_old_full.h5ad')],
+    '05_petracer': [('05_petracer/petracer_M2-1_lineage.h5ad', 'bench_petracer_lineage/m2_lineage/petracer_M2-1_lineage.h5ad')],
+    '06_fibrosis': [('06_fibrosis/gse250346_unaffected_vs_all_fibrosis.h5ad', 'bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad'),
+                    ('06_fibrosis/he_annot_matched.csv.gz', '/project/zhihuanglab/yancui/haruka_fibrosis_he/he_annot_matched.csv.gz')],
+    '07_kras': [('07_kras/mouselung_kras_xenium_clean_noC3.h5ad', '/home/yancui/mouselung_kras_xenium_clean_noC3.h5ad')],
+}
 
 NOTEBOOKS = {}
 
@@ -148,9 +170,8 @@ alveolar macrophages vs airway-adjacent ciliated/SMC) predicts the bad TE on hel
 responders −0.39) and exists before treatment (control SD ratio 0.94). Interactions: squidpy neighbourhood
 enrichment and LIANA+ (lipid exchange Lpl–Sdc1, Apob–Lrp1 at the bad end; complement C3 at the good end).""",
     steps=[
-        ('md', '## 1 Data: collaborator h5ad (X = normalize+log1p, raw counts in `layers[\"counts\"]`)'),
-        ('code', """import os  # collaborator file (MRTX1133 Xenium 5K); set KRAS_H5AD_URL to the share link obtained from the data owners
-run(f"curl -L --fail -o /home/yancui/mouselung_kras_xenium_clean_noC3.h5ad '{os.environ.get('KRAS_H5AD_URL', '<share link from the data owners>')}' && sha256sum /home/yancui/mouselung_kras_xenium_clean_noC3.h5ad  # expect bd191fd8...166b9f", 'data')"""),
+        ('md', '## 1 Data: the KRAS Xenium h5ad is distributed as-is (X = normalize+log1p, raw counts in `layers[\"counts\"]`); see section 0'),
+        ('code', """run('hf download C1vy/haruka_v2_data 07_kras/mouselung_kras_xenium_clean_noC3.h5ad --repo-type dataset --local-dir /home/yancui/hf_data && ln -sfn /home/yancui/hf_data/07_kras/mouselung_kras_xenium_clean_noC3.h5ad /home/yancui/mouselung_kras_xenium_clean_noC3.h5ad && sha256sum /home/yancui/mouselung_kras_xenium_clean_noC3.h5ad  # expect bd191fd8...166b9f', 'data')"""),
         ('md', '## 2 Fit (default model; batch = slice, 2000 HVG, saves the model + 3 shuffled-s nulls; ~2.8 h on one GPU)'),
         ('code', f"""run('mkdir -p results_kras_te_null && bash {KR}/run_kras_te_null_fit.sh 0', 'fit', log='results_kras_te_null/fit.log')
 require(H / '{FIT_KR}/salient_composition_shift.npy', H / '{FIT_KR}/null_shuffled_s_composition_shift_2.npy')"""),
