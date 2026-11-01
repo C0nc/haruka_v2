@@ -1,0 +1,7 @@
+programme,cell_type,rep,n_genes,mean
+DAM,Microglia,z,14,0.21165367708744162
+DAM,Microglia,s,14,0.2524666748007917
+Homeostatic microglia,Microglia,z,6,-0.1009025203726604
+Homeostatic microglia,Microglia,s,6,-0.10391778821736151
+Disease-assoc. astrocyte,Astrocyte,z,8,0.09078505104892565
+Disease-assoc. astrocyte,Astrocyte,s,8,0.1345196031775513

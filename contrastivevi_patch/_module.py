@@ -129,12 +129,20 @@ class NeighborGATv2(nn.Module):
         LeakyReLU slope used inside the attention logit.
     """
 
-    def __init__(self, n_in: int, n_out: int, heads: int = 1, negative_slope: float = 0.2) -> None:
+    def __init__(
+        self,
+        n_in: int,
+        n_out: int,
+        heads: int = 1,
+        negative_slope: float = 0.2,
+        self_query: bool = True,
+    ) -> None:
         super().__init__()
         self.n_in = n_in
         self.n_out = n_out
         self.heads = heads
         self.negative_slope = negative_slope
+        self.self_query = self_query
         self.lin_l = nn.Linear(n_in, heads * n_out, bias=True)
         self.lin_r = nn.Linear(n_in, heads * n_out, bias=True)
         self.att = nn.Parameter(torch.empty(1, 1, heads, n_out))
@@ -172,7 +180,12 @@ class NeighborGATv2(nn.Module):
         """
         batch, k, _ = h_nbr.shape
         src = self.lin_l(h_nbr).view(batch, k, self.heads, self.n_out)
-        tgt = self.lin_r(h_self).view(batch, 1, self.heads, self.n_out)
+        if self.self_query:
+            tgt = self.lin_r(h_self).view(batch, 1, self.heads, self.n_out)
+        else:
+            # Identifiable neighbour-only spatial factor: the centre cell cannot
+            # encode its own intrinsic state by changing the attention weights.
+            tgt = torch.zeros_like(src[:, :1])
         logits = (F.leaky_relu(src + tgt, self.negative_slope) * self.att).sum(dim=-1)
 
         if mask is None:
@@ -981,6 +994,7 @@ class ContrastiveVAE(BaseModuleClass):
         spatial_attach: str = "background",
         spatial_encoder: str = "gat",
         n_attention_heads: int = 1,
+        gat_self_query: bool = True,
         setattn_tokens: int = 16,
         setattn_token_dim: int = 32,
         setattn_layers: int = 2,
@@ -994,7 +1008,24 @@ class ContrastiveVAE(BaseModuleClass):
         mmd_bandwidth: str = "median",
         mi_debias: bool = True,
         penalize_salient_spatial: bool = False,
+        salient_within_penalty: float = 0.0,
+        spatial_pair_penalty: float = 0.0,
+        condition_only_salient_spatial: bool = False,
+        salient_prior_components: int = 0,
+        salient_assignment_penalty: float = 0.0,
+        salient_assignment_temperature: float = 1.0,
+        paired_slot_reg_weight: float = 0.0,
+        paired_slot_reg_alpha: float = 1e-3,
+        paired_slot_reg_start_epoch: int = 0,
+        paired_slot_reg_ramp_epochs: int = 0,
+        background_representation: str = "full",
         spatial_invariance_penalty: float = 0.5,
+        background_mmd_penalty: float = 0.0,
+        background_wasserstein_penalty: float = 0.0,
+        zs_independence_penalty: float = 0.0,
+        symmetric_zs_independence: bool = False,
+        detach_target_z_for_composition: bool = False,
+        batch_injection_mode: str = "all",
         mask_salient_mean_on_background: bool = False,
         me_from_background_only: bool = False,
         sw_n_proj: int = 64,
@@ -1024,6 +1055,13 @@ class ContrastiveVAE(BaseModuleClass):
         self.px_r = torch.nn.Parameter(torch.randn(n_input))
         self.use_observed_lib_size = use_observed_lib_size
         self.wasserstein_penalty = wasserstein_penalty
+        if batch_injection_mode not in {"all", "salient_encoder", "decoder_only"}:
+            raise ValueError(
+                "batch_injection_mode must be 'all', 'salient_encoder', or "
+                "'decoder_only', got "
+                f"{batch_injection_mode!r}"
+            )
+        self.batch_injection_mode = batch_injection_mode
         self.me_weight = me_weight
         if me_reduction not in ("mean", "sum"):
             raise ValueError(f"me_reduction must be 'mean' or 'sum', got {me_reduction!r}")
@@ -1131,14 +1169,103 @@ class ContrastiveVAE(BaseModuleClass):
         self.spatial_attach = spatial_attach
         self.spatial_encoder = spatial_encoder
         self.n_attention_heads = n_attention_heads
+        self.gat_self_query = gat_self_query
         self.kl_spatial_weight = kl_spatial_weight
         self.lam_mi = lam_mi
         self.reg_to_use = reg_to_use
         self.mmd_bandwidth = mmd_bandwidth
         self.mi_debias = mi_debias
         self.penalize_salient_spatial = penalize_salient_spatial
+        self.salient_within_penalty = salient_within_penalty
+        self.spatial_pair_penalty = spatial_pair_penalty
+        self.condition_only_salient_spatial = bool(condition_only_salient_spatial)
+        if self.condition_only_salient_spatial and (
+            spatial_attach != "both" or n_spatial_latent <= 0
+        ):
+            raise ValueError(
+                "condition_only_salient_spatial=True requires "
+                "spatial_attach='both' and n_spatial_latent > 0"
+            )
+
+        # MIXTURE PRIOR on the salient latent.
+        #
+        # The default N(0, I) prior is structurally mismatched to this factor. The
+        # generative salient state is DISCRETE -- s takes exactly K values
+        # (2 in the benchmark: A_ss[0]=0 and A_ss[1]) -- while a unimodal Gaussian
+        # prior pulls the posterior toward one smooth blob. Measured consequence:
+        # the state direction survives as 36.5% of the salient latent's variance
+        # and a linear probe reads it at 0.813, but the two classes overlap far
+        # more than in the ground truth (Cohen d 1.16 vs 1.92) and the projection
+        # has 5 local maxima instead of 2, so GMM recovers ARI 0.001 against a
+        # ground-truth ceiling of 0.999.
+        #
+        # This was NOT the coupling between state and domain (weakening it on v5
+        # left ARI at 0.001) and NOT domain contamination (residualising the
+        # salient slot against its spatial partner removed the domain AND the
+        # state, dependence 0.813 -> 0.483). What is left is the prior.
+        #
+        # `salient_prior_components=0` keeps the original N(0, I) behaviour, so
+        # every earlier result stays reproducible.
+        self.salient_prior_components = int(salient_prior_components)
+        if self.salient_prior_components > 0:
+            k, d = self.salient_prior_components, n_salient_latent
+            # Components initialised spread over the latent so they do not start
+            # collapsed onto each other; the scale matches the unit prior they
+            # replace.
+            self.salient_prior_mu = torch.nn.Parameter(torch.randn(k, d))
+            self.salient_prior_logvar = torch.nn.Parameter(torch.zeros(k, d))
+            self.salient_prior_logits = torch.nn.Parameter(torch.zeros(k))
+        if salient_assignment_penalty < 0:
+            raise ValueError("salient_assignment_penalty must be non-negative")
+        if salient_assignment_penalty > 0 and self.salient_prior_components < 2:
+            raise ValueError(
+                "salient_assignment_penalty requires salient_prior_components >= 2"
+            )
+        if salient_assignment_temperature <= 0:
+            raise ValueError("salient_assignment_temperature must be positive")
+        self.salient_assignment_penalty = float(salient_assignment_penalty)
+        self.salient_assignment_temperature = float(salient_assignment_temperature)
+        if paired_slot_reg_weight < 0:
+            raise ValueError("paired_slot_reg_weight must be non-negative")
+        if paired_slot_reg_alpha < 0:
+            raise ValueError("paired_slot_reg_alpha must be non-negative")
+        if paired_slot_reg_start_epoch < 0:
+            raise ValueError("paired_slot_reg_start_epoch must be non-negative")
+        if paired_slot_reg_ramp_epochs < 0:
+            raise ValueError("paired_slot_reg_ramp_epochs must be non-negative")
+        self.paired_slot_reg_weight = paired_slot_reg_weight
+        self.paired_slot_reg_alpha = paired_slot_reg_alpha
+        self.paired_slot_reg_start_epoch = paired_slot_reg_start_epoch
+        self.paired_slot_reg_ramp_epochs = paired_slot_reg_ramp_epochs
+        if background_representation not in ("full", "private"):
+            raise ValueError("background_representation must be 'full' or 'private'")
+        if background_representation == "private":
+            if n_spatial_latent <= 0 or spatial_attach not in ("background", "both"):
+                raise ValueError(
+                    "background_representation='private' requires a background-attached GAT"
+                )
+            if n_background_latent <= n_spatial_latent:
+                raise ValueError(
+                    "private background representation needs at least one non-GAT-carrier dimension"
+                )
+        self.background_representation = background_representation
         self.spatial_invariance_penalty = spatial_invariance_penalty
+        if background_mmd_penalty < 0:
+            raise ValueError("background_mmd_penalty must be non-negative")
+        self.background_mmd_penalty = background_mmd_penalty
+        if background_wasserstein_penalty < 0:
+            raise ValueError("background_wasserstein_penalty must be non-negative")
+        self.background_wasserstein_penalty = background_wasserstein_penalty
+        if zs_independence_penalty < 0:
+            raise ValueError("zs_independence_penalty must be non-negative")
+        self.zs_independence_penalty = zs_independence_penalty
+        self.symmetric_zs_independence = symmetric_zs_independence
+        self.detach_target_z_for_composition = detach_target_z_for_composition
         self.mask_salient_mean_on_background = mask_salient_mean_on_background
+        # Runtime phase switch used by the ownership schedule. It is deliberately
+        # not a constructor hyperparameter: checkpoints always resume in the normal
+        # joint objective unless a training driver explicitly enters pretraining.
+        self.background_only_training = False
         # COVET read from z ALONE. On cat([z,s]) the salient latent can satisfy the
         # niche target, which leaves z unconstrained and free to absorb the condition.
         self.me_from_background_only = me_from_background_only
@@ -1170,6 +1297,11 @@ class ContrastiveVAE(BaseModuleClass):
             self.register_buffer("library_log_vars", torch.from_numpy(library_log_vars).float())
 
         cat_list = [n_batch]
+        encoder_cat_list = cat_list if batch_injection_mode == "all" else []
+        salient_cat_list = (
+            cat_list if batch_injection_mode in {"all", "salient_encoder"} else []
+        )
+        decoder_cat_list = [] if batch_injection_mode == "salient_encoder" else cat_list
         # With niche_context both intrinsic encoders read the cell's own expression AND
         # its pooled niche context. The library encoder deliberately does not: library
         # size is a property of the cell, not of its neighborhood.
@@ -1178,12 +1310,12 @@ class ContrastiveVAE(BaseModuleClass):
         self.z_encoder = Encoder(
             n_encoder_input,
             n_background_latent,
-            n_cat_list=cat_list,
+            n_cat_list=encoder_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
             dropout_rate=dropout_rate,
             distribution=self.latent_distribution,
-            inject_covariates=True,
+            inject_covariates=batch_injection_mode == "all",
             use_batch_norm=True,
             use_layer_norm=False,
             var_activation=None,
@@ -1192,12 +1324,12 @@ class ContrastiveVAE(BaseModuleClass):
         self.s_encoder = Encoder(
             n_encoder_input,
             n_salient_latent,
-            n_cat_list=cat_list,
+            n_cat_list=salient_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
             dropout_rate=dropout_rate,
             distribution=self.latent_distribution,
-            inject_covariates=True,
+            inject_covariates=batch_injection_mode in {"all", "salient_encoder"},
             use_batch_norm=True,
             use_layer_norm=False,
             var_activation=None,
@@ -1207,10 +1339,10 @@ class ContrastiveVAE(BaseModuleClass):
             n_input,
             1,
             n_layers=1,
-            n_cat_list=cat_list,
+            n_cat_list=encoder_cat_list,
             n_hidden=n_hidden,
             dropout_rate=dropout_rate,
-            inject_covariates=True,
+            inject_covariates=batch_injection_mode == "all",
             use_batch_norm=True,
             use_layer_norm=False,
             var_activation=None,
@@ -1224,26 +1356,27 @@ class ContrastiveVAE(BaseModuleClass):
         self.decoder = DecoderSCVI(
             n_total_latent,
             n_input,
-            n_cat_list=cat_list,
+            n_cat_list=decoder_cat_list,
             n_layers=n_layers,
             n_hidden=n_hidden,
-            inject_covariates=True,
+            inject_covariates=batch_injection_mode != "salient_encoder",
             use_batch_norm=True,
             use_layer_norm=False,
         )
-        g_out = int(np.sqrt((n_input_full - n_input)))
-        g_out = int((g_out + 1) * g_out / 2)
-        #print)
-        self.decoder_me = FCLayers(
-            n_in=(n_background_latent if me_from_background_only else n_total_latent),
-            n_out= g_out,
-            n_cat_list=cat_list,
-            n_layers=n_layers,
-            n_hidden=n_hidden,
-            inject_covariates=True,
-            use_batch_norm=True,
-            use_layer_norm=False,
-        )
+        self.decoder_me = None
+        if n_input_full > n_input:
+            g_out = int(np.sqrt(n_input_full - n_input))
+            g_out = int((g_out + 1) * g_out / 2)
+            self.decoder_me = FCLayers(
+                n_in=(n_background_latent if me_from_background_only else n_total_latent),
+                n_out=g_out,
+                n_cat_list=decoder_cat_list,
+                n_layers=n_layers,
+                n_hidden=n_hidden,
+                inject_covariates=batch_injection_mode != "salient_encoder",
+                use_batch_norm=True,
+                use_layer_norm=False,
+            )
 
         # Built last, and only when enabled, so that with niche_context == False the
         # parameter-initialisation RNG draws are byte-identical to the model without
@@ -1280,20 +1413,24 @@ class ContrastiveVAE(BaseModuleClass):
         if n_spatial_latent > 0:
             if spatial_encoder == "gat":
                 self.gat_mean = NeighborGATv2(
-                    n_spatial_latent, n_spatial_latent, heads=n_attention_heads
+                    n_spatial_latent, n_spatial_latent, heads=n_attention_heads,
+                    self_query=gat_self_query,
                 )
                 self.gat_var = NeighborGATv2(
-                    n_spatial_latent, n_spatial_latent, heads=n_attention_heads
+                    n_spatial_latent, n_spatial_latent, heads=n_attention_heads,
+                    self_query=gat_self_query,
                 )
                 # 2x2: a SECOND, fully independent GAT pair reading the salient latent.
                 # Built after the first so that with spatial_attach != "both" the
                 # parameter-init RNG draws are byte-identical to before this feature.
                 if spatial_attach == "both":
                     self.gat_mean_salient = NeighborGATv2(
-                        n_spatial_latent, n_spatial_latent, heads=n_attention_heads
+                        n_spatial_latent, n_spatial_latent, heads=n_attention_heads,
+                        self_query=gat_self_query,
                     )
                     self.gat_var_salient = NeighborGATv2(
-                        n_spatial_latent, n_spatial_latent, heads=n_attention_heads
+                        n_spatial_latent, n_spatial_latent, heads=n_attention_heads,
+                        self_query=gat_self_query,
                     )
             else:
                 # One trunk, two heads: running the whole transformer twice to get a
@@ -1627,6 +1764,7 @@ class ContrastiveVAE(BaseModuleClass):
         neighbor_mask: torch.Tensor | None,
         gene_mask: torch.Tensor | None,
         salient_mean: torch.Tensor | None = None,
+        salient_spatial_start: int = 0,
     ) -> tuple[torch.Tensor, ...]:
         if neighbor_idx is None:
             raise ValueError(
@@ -1667,17 +1805,51 @@ class ContrastiveVAE(BaseModuleClass):
             arm = "background" if self.spatial_attach == "background" else "salient"
             return self._spatial_pool(arm, attach_mean, nbr_x, flat, mask, n_cells, k)
 
-        # 2x2. z_sp pools the neighbors' BACKGROUND latents (niche structure that
-        # exists in both arms); s_sp pools their SALIENT latents (niche structure
-        # specific to the diseased arm). No mask forces s_sp to zero on controls:
-        # s_int is already driven to ~0 there by the Wasserstein term, so the salient
-        # encoder returns ~0 for every neighbor of a control cell and s_sp follows.
+        # 2x2. z_sp pools the neighbors' BACKGROUND latents for every cell. In the
+        # ContrastiveVI-faithful condition-only mode, s_sp is evaluated only for
+        # target centres. Control s_sp is represented by the exact prior N(0, I),
+        # sampled as zero for decoding, so it contributes neither reconstruction
+        # information nor spatial KL. The salient INTRINSIC encoder still runs on
+        # controls above: its posterior is required by ContrastiveVI's Wasserstein
+        # penalty and is zeroed only after the background/target split.
         qsp_m, qsp_v, z_sp = self._spatial_pool(
             "background", attach_mean, nbr_x, flat, mask, n_cells, k
         )
-        qssp_m, qssp_v, s_sp = self._spatial_pool(
-            "salient", salient_mean, nbr_x, flat, mask, n_cells, k, second_pair=True
-        )
+        start = int(salient_spatial_start)
+        if not 0 <= start <= n_cells:
+            raise ValueError(
+                f"salient_spatial_start must be in [0, {n_cells}], got {start}"
+            )
+        if start == 0:
+            qssp_m, qssp_v, s_sp = self._spatial_pool(
+                "salient", salient_mean, nbr_x, flat, mask, n_cells, k,
+                second_pair=True,
+            )
+        else:
+            qssp_m = torch.zeros(
+                n_cells, self.n_spatial_latent, device=qsp_m.device, dtype=qsp_m.dtype
+            )
+            qssp_v = torch.ones_like(qssp_m)
+            s_sp = torch.zeros_like(qssp_m)
+            if start < n_cells:
+                target_flat = idx[start:].reshape(-1)
+                target_nbr_x = nbr_x.reshape(n_cells, k, self.n_input)[start:].reshape(
+                    -1, self.n_input
+                )
+                target_mask = None if mask is None else mask[start:]
+                target_m, target_v, target_s = self._spatial_pool(
+                    "salient",
+                    salient_mean[start:],
+                    target_nbr_x,
+                    target_flat,
+                    target_mask,
+                    n_cells - start,
+                    k,
+                    second_pair=True,
+                )
+                qssp_m[start:] = target_m
+                qssp_v[start:] = target_v
+                s_sp[start:] = target_s
         return qsp_m, qsp_v, z_sp, qssp_m, qssp_v, s_sp
 
     @auto_move_data
@@ -1689,11 +1861,16 @@ class ContrastiveVAE(BaseModuleClass):
         n_samples: int = 1,
         neighbor_idx: torch.Tensor | None = None,
         neighbor_mask: torch.Tensor | None = None,
+        salient_spatial_start: int = 0,
     ) -> dict[str, torch.Tensor]:
         x_ = x[:, :index]
         x_ = torch.nan_to_num(x_, nan=0.0, posinf=0.0, neginf=0.0)
         if self.use_observed_lib_size:
-            library = torch.log(x.sum(1).clamp(min=1e-6)).unsqueeze(1)
+            # Only the first `index` columns are observed gene counts. The
+            # remaining columns are the continuous COVET reconstruction target;
+            # including them made library size depend on cov_gene_num and could
+            # even add negative off-diagonal covariance entries to the total.
+            library = torch.log(x_.sum(1).clamp(min=1e-6)).unsqueeze(1)
 
         # Corruption applies to the encoder input only; the library size and the
         # reconstruction target are both read from the uncorrupted x.
@@ -1726,7 +1903,12 @@ class ContrastiveVAE(BaseModuleClass):
         if self.n_spatial_latent > 0:
             attach_mean = qz_m if self.spatial_attach != "salient" else qs_m
             spatial_out = self._spatial_inference(
-                attach_mean, neighbor_idx, neighbor_mask, gene_mask, salient_mean=qs_m
+                attach_mean,
+                neighbor_idx,
+                neighbor_mask,
+                gene_mask,
+                salient_mean=qs_m,
+                salient_spatial_start=salient_spatial_start,
             )
             if self.spatial_attach == "both":
                 qsp_m, qsp_v, z_sp, qssp_m, qssp_v, s_sp = spatial_out
@@ -1788,9 +1970,29 @@ class ContrastiveVAE(BaseModuleClass):
         target_batch_size = target["x"].shape[0]
         inference_input = {}
         for key in background.keys():
-            inference_input[key] = torch.cat([background[key], target[key]], dim=0)
+            target_value = target[key]
+            if self.background_only_training:
+                # Do not merely omit the target loss. The encoders contain batch
+                # normalization, so including treated rows in this concatenated
+                # forward pass would still alter both the activations used by the
+                # control loss and the running statistics. The contrastive loader
+                # has already equalized arm sizes; repeating control tensors here
+                # makes stage 1 genuinely control-only end to end.
+                target_value = background[key]
+            inference_input[key] = torch.cat([background[key], target_value], dim=0)
         inference_input['index'] = self.n_input
-        outputs = self._generic_inference(**inference_input, n_samples=n_samples)
+        salient_spatial_start = 0
+        if self.condition_only_salient_spatial:
+            salient_spatial_start = (
+                background_batch_size + target_batch_size
+                if self.background_only_training
+                else background_batch_size
+            )
+        outputs = self._generic_inference(
+            **inference_input,
+            n_samples=n_samples,
+            salient_spatial_start=salient_spatial_start,
+        )
         batch_size_dim = 0 if n_samples == 1 else 1
         background_outputs, target_outputs = {}, {}
         for key in outputs.keys():
@@ -1805,6 +2007,23 @@ class ContrastiveVAE(BaseModuleClass):
             background_outputs[key] = background_tensor
             target_outputs[key] = target_tensor
         background_outputs["s"] = torch.zeros_like(background_outputs["s"])
+        # s_sp MUST be zeroed for the same reason s is. It was not, and the comment
+        # below justified that by asserting "s_int is already driven to ~0 there by
+        # the Wasserstein term, so the salient encoder returns ~0 for every neighbor
+        # of a control cell and s_sp follows". Measured, that premise is false:
+        # ||s|| on control cells is 2.0-2.7 against 3.0-4.0 on treated -- the default
+        # wasserstein_penalty=0.2 shrinks it by ~25%, it does not zero it.
+        #
+        # The consequence is a route that defeats the contrastive semantics. A
+        # background cell is decoded from [z, z_sp, 0, s_sp] with s_sp != 0, so
+        # anatomy moved into the SALIENT branch is still delivered to background
+        # cells and its migration out of z costs nothing in reconstruction -- while
+        # `_independence_penalty`, which taxes z alone, actively drives that
+        # migration. Measured under spatial_attach="both": dependence(z -> arch)
+        # falls to 0.824 while dependence(s -> arch) reaches 0.998, whereas under
+        # "background" (which has no s_sp) z keeps anatomy at 0.999.
+        if "s_sp" in background_outputs and background_outputs["s_sp"] is not None:
+            background_outputs["s_sp"] = torch.zeros_like(background_outputs["s_sp"])
         # z_sp is deliberately NOT zeroed here. Zeroing s is what defines salient as
         # "what target cells have and background cells do not". Niche-induced variation
         # is not condition-specific: control tissue has real spatial structure too, and
@@ -1822,7 +2041,9 @@ class ContrastiveVAE(BaseModuleClass):
         batch_index: torch.Tensor,
         z_sp: torch.Tensor | None = None,
         s_sp: torch.Tensor | None = None,
+        z_for_me: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
+        me_z = z if z_for_me is None else z_for_me
         if self.n_spatial_latent > 0:
             zeros = lambda: torch.zeros(  # noqa: E731
                 *z.shape[:-1], self.n_spatial_latent, device=z.device, dtype=z.dtype
@@ -1834,10 +2055,13 @@ class ContrastiveVAE(BaseModuleClass):
                     s_sp = zeros()
                 # Each intrinsic block sits next to its own spatial block.
                 latent = torch.cat([z, z_sp, s, s_sp], dim=-1)
+                me_latent = torch.cat([me_z, z_sp, s, s_sp], dim=-1)
             else:
                 latent = torch.cat([z, s, z_sp], dim=-1)
+                me_latent = torch.cat([me_z, s, z_sp], dim=-1)
         else:
             latent = torch.cat([z, s], dim=-1)
+            me_latent = torch.cat([me_z, s], dim=-1)
         px_scale, px_r, px_rate, px_dropout = self.decoder(
             self.dispersion,
             latent,
@@ -1848,7 +2072,7 @@ class ContrastiveVAE(BaseModuleClass):
         px_scale = torch.nan_to_num(px_scale, nan=1.0, posinf=1e4, neginf=1e-6).clamp(min=1e-6)
         if self.n_input_full > self.n_input:
             me_pred = self.decoder_me(
-                z if self.me_from_background_only else latent,
+                me_z if self.me_from_background_only else me_latent,
                 batch_index,
             )
         else:
@@ -1884,6 +2108,13 @@ class ContrastiveVAE(BaseModuleClass):
         generative_input["batch_index"] = torch.cat(
             [background["batch_index"], target["batch_index"]], dim=0
         )
+        if self.detach_target_z_for_composition:
+            # Keep D([z,s]) in the forward pass, while preventing the target
+            # composition objective from teaching z to absorb the target niche.
+            # Controls still train z; decoder weights see both arms; s remains live.
+            generative_input["z_for_me"] = torch.cat(
+                [background["z"], target["z"].detach()], dim=batch_size_dim
+            )
         outputs = self._generic_generative(**generative_input)
         background_outputs, target_outputs = {}, {}
         for key in ["px_scale", "px_rate", "px_dropout", 'me_pred']:
@@ -2115,6 +2346,71 @@ class ContrastiveVAE(BaseModuleClass):
             - 2.0 * k(sample, ref, bw).mean()
         )
 
+    def _two_sample_mmd(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Characteristic-kernel discrepancy between two empirical distributions."""
+        cap = self.mmd_max_samples
+        if x.shape[0] > cap:
+            x = x[torch.randperm(x.shape[0], device=x.device)[:cap]]
+        if y.shape[0] > cap:
+            y = y[torch.randperm(y.shape[0], device=y.device)[:cap]]
+        if x.shape[0] < 2 or y.shape[0] < 2:
+            return x.sum() * 0.0
+        joint = torch.cat([x, y], dim=0)
+        bw = self._median_bandwidth(joint)
+        k = self._mmd_kernel
+        # The biased estimator is non-negative and substantially less noisy than
+        # the unbiased form at minibatch scale, which matters for an ownership
+        # constraint applied at every optimizer step.
+        return (
+            k(x, x, bw).mean()
+            + k(y, y, bw).mean()
+            - 2.0 * k(x, y, bw).mean()
+        ).clamp_min(0.0)
+
+    def _background_mmd(self, inference_outputs) -> torch.Tensor:
+        """Match complete control/treated distributions of z and z_sp."""
+        bg, tg = inference_outputs["background"], inference_outputs["target"]
+        flatten = lambda value: value.reshape(-1, value.shape[-1])  # noqa: E731
+        penalty = self._two_sample_mmd(flatten(bg["qz_m"]), flatten(tg["qz_m"]))
+        if self.n_spatial_latent > 0:
+            penalty = penalty + self._two_sample_mmd(
+                flatten(bg["qsp_m"]), flatten(tg["qsp_m"])
+            )
+        return penalty
+
+    def _two_sample_sliced_wasserstein(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> torch.Tensor:
+        """Sliced 2-Wasserstein between two empirical latent distributions.
+
+        Unlike ``_sliced_wasserstein_penalty``, this is a two-sample statistic and
+        deliberately does not center either cloud: a control/condition mean shift
+        in background ``z`` is precisely the leakage that this term should remove.
+        """
+        n = min(x.shape[0], y.shape[0])
+        if n < 2:
+            return (x.sum() + y.sum()) * 0.0
+        if x.shape[0] != n:
+            x = x[torch.randperm(x.shape[0], device=x.device)[:n]]
+        if y.shape[0] != n:
+            y = y[torch.randperm(y.shape[0], device=y.device)[:n]]
+        dim = x.shape[1]
+        proj = torch.randn(
+            self.sw_n_proj, dim, device=x.device, dtype=x.dtype
+        )
+        proj = proj / proj.norm(dim=1, keepdim=True).clamp(min=1e-12)
+        x_sorted = (x @ proj.t()).sort(dim=0).values
+        y_sorted = (y @ proj.t()).sort(dim=0).values
+        return ((x_sorted - y_sorted) ** 2).mean()
+
+    def _background_wasserstein(self, inference_outputs) -> torch.Tensor:
+        """Match control and condition distributions of background posterior means."""
+        bg, tg = inference_outputs["background"], inference_outputs["target"]
+        flatten = lambda value: value.reshape(-1, value.shape[-1])  # noqa: E731
+        return self._two_sample_sliced_wasserstein(
+            flatten(bg["qz_m"]), flatten(tg["qz_m"])
+        )
+
     @staticmethod
     def _second_moment(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         # Uncentred, as in SIMVI. Both latents are KL-pulled toward zero mean, and
@@ -2217,6 +2513,67 @@ class ContrastiveVAE(BaseModuleClass):
             sample = sample[keep]
         return self._mmd_penalty(sample)
 
+    def _ridge_predictability_penalty(
+        self, target: torch.Tensor, nuisance: torch.Tensor
+    ) -> torch.Tensor:
+        """Penalize target variance linearly predictable from a nuisance slot.
+
+        This is the differentiable training-time counterpart of the benchmark's
+        ridge residualization. The nuisance is detached deliberately: the target
+        slot must stop copying the spatial representation, while the spatial slot
+        remains free to preserve its own signal. Per-column standardization makes
+        the value approximately an average ridge R-squared and prevents latent
+        scale from setting the strength of the regularizer.
+        """
+        if target.shape[0] < 2:
+            return target.sum() * 0.0
+        x = nuisance.detach()
+        x = x - x.mean(dim=0, keepdim=True)
+        y = target - target.mean(dim=0, keepdim=True)
+        x_scale = x.square().mean(dim=0, keepdim=True).sqrt().clamp(min=1e-4)
+        # Detach scales so the encoder cannot reduce the loss merely by inflating
+        # a target dimension. The KL remains responsible for marginal scale.
+        y_scale = y.square().mean(dim=0, keepdim=True).sqrt().clamp(min=1e-4).detach()
+        x = x / x_scale
+        y = y / y_scale
+        n = float(target.shape[0])
+        gram = x.transpose(0, 1) @ x / n
+        rhs = x.transpose(0, 1) @ y / n
+        eye = torch.eye(gram.shape[0], device=gram.device, dtype=gram.dtype)
+        coef = torch.linalg.solve(gram + self.paired_slot_reg_alpha * eye, rhs)
+        prediction = x @ coef
+        return prediction.square().mean()
+
+    def _paired_slot_reg_stage_weight(self) -> float:
+        """Zero before the separation stage, then optionally ramp to one."""
+        stage_epoch = self.current_epoch_ - self.paired_slot_reg_start_epoch
+        if stage_epoch < 0:
+            return 0.0
+        if self.paired_slot_reg_ramp_epochs <= 0:
+            return 1.0
+        return float(min(1.0, (stage_epoch + 1) / self.paired_slot_reg_ramp_epochs))
+
+    def _paired_slot_reg_penalty(
+        self, inference_outputs: dict[str, dict[str, torch.Tensor]]
+    ) -> torch.Tensor:
+        """Mirror the two raw-slot cleanup pairs on posterior means."""
+        background = inference_outputs["background"]
+        target = inference_outputs["target"]
+
+        def flat(t: torch.Tensor) -> torch.Tensor:
+            return t.reshape(-1, t.shape[-1])
+
+        z = torch.cat([flat(background["qz_m"]), flat(target["qz_m"])], dim=0)
+        z_sp = torch.cat(
+            [flat(background["qsp_m"]), flat(target["qsp_m"])], dim=0
+        )
+        penalty = self._ridge_predictability_penalty(z, z_sp)
+        if self.spatial_attach == "both":
+            penalty = penalty + self._ridge_predictability_penalty(
+                flat(target["qssp_m"]), flat(target["qsp_m"])
+            )
+        return penalty
+
     def _independence_penalty(
         self, inference_outputs: dict[str, dict[str, torch.Tensor]]
     ) -> torch.Tensor:
@@ -2260,11 +2617,55 @@ class ContrastiveVAE(BaseModuleClass):
         # so the arm was inert and harmless. Turning it on only makes sense if you
         # specifically want salient to capture condition effects that are NOT
         # spatially organised.
+        # WITHIN-PAIR salient independence: I(s ; s_sp). This is the term the 2x2
+        # needs and does not have. `_pair_penalty(z, z_sp)` above squeezes ONLY the
+        # background intrinsic latent, so SIMVI's premise -- "intrinsic variations
+        # must encode minimal information" -- holds for half the model. The
+        # unconstrained half is then where displaced variation goes: measured,
+        # dependence(s -> arch) rises from 0.192 with no spatial branch to 0.991
+        # with one, and `lam_mi=0` reverses it.
+        #
+        # NOT the same as `penalize_salient_spatial` below, which is CROSS-pair
+        # (s vs z_sp) and which measured worst of every variant tried
+        # (sal->intr 0.947 -> 0.448). This is the mirror of the background arm:
+        # each intrinsic latent decorrelated from ITS OWN spatial partner.
+        #
+        # Target arm only: `s` is identically zero on background cells after the
+        # inference split, so including them would measure the zero block.
+        if self.salient_within_penalty > 0 and self.spatial_attach == "both":
+            s_t = flat(target["s"])
+            s_sp_t = flat(target["s_sp"]).detach()
+            penalty = penalty + self.salient_within_penalty * self._pair_penalty(s_t, s_sp_t)
+
         if self.penalize_salient_spatial:
             # s is identically zero on every background cell, so this arm is restricted
             # to the target arm; otherwise it would measure the zero block.
             penalty = penalty + self._pair_penalty(
                 flat(target["s"]), flat(target["z_sp"]).detach()
+            )
+
+        # SPATIAL-vs-SPATIAL: s_sp against z_sp. The pair that was missing.
+        #
+        # `s_sp` and `z_sp` are two GAT branches reading the SAME neighbourhood, and
+        # until now nothing in the loss forbade the salient one from simply copying
+        # the background one. Measured on the v5 benchmark (delta_sp=0.15, where the
+        # salient domain is subtle): `s_sp` scored 0.933 on gt_niche -- the
+        # BACKGROUND domain -- while scoring 0.068 on gt_sal_domain, its own target.
+        # It was not collapsed (std 0.63, same as when it worked); it was pointed at
+        # the wrong factor. Raising k_spatial 8 -> 32 did not fix it (0.068 -> 0.234,
+        # still 2.6x below CINEMA-OT's 0.610 from plain mean-pooling), which ruled
+        # out a starved neighbourhood and left the missing constraint as the cause.
+        #
+        # z_sp is DETACHED so the gradient pushes the salient branch off the
+        # background domain rather than degrading the background branch, which
+        # already sits at 0.999 on its own factor and must not be disturbed.
+        #
+        # TARGET ARM ONLY. `s_sp` is zeroed on every background cell (same reason `s`
+        # is), so including that arm would feed the estimator a block of zeros --
+        # diluting the penalty and making the covariance degenerate on half the rows.
+        if self.spatial_pair_penalty > 0 and self.spatial_attach == "both":
+            penalty = penalty + self.spatial_pair_penalty * self._pair_penalty(
+                flat(target["s_sp"]), flat(target["z_sp"]).detach()
             )
         return penalty
 
@@ -2297,6 +2698,50 @@ class ContrastiveVAE(BaseModuleClass):
         mean_gap = (bg.mean(dim=0) - tg.mean(dim=0)).pow(2).sum()
         var_gap = (bg.var(dim=0, unbiased=False) - tg.var(dim=0, unbiased=False)).pow(2).sum()
         return mean_gap + var_gap
+
+    def _salient_mixture_kl(self, qs_m, qs_v, s):
+        """Monte-Carlo KL(q(s|x) || p_mix(s)) for a learnable Gaussian mixture prior.
+
+        The mixture KL has no closed form, so it is estimated at the sampled `s`
+        that the decoder already used:  log q(s|x) - log p_mix(s). Single-sample,
+        same estimator the ELBO's reconstruction term relies on, and it reduces to
+        the analytic Gaussian KL in expectation when the mixture has one unit
+        component.
+        """
+        from torch.distributions import Normal as _N
+        log_q = _N(qs_m, qs_v.sqrt()).log_prob(s).sum(-1)
+        mu = self.salient_prior_mu
+        var = self.salient_prior_logvar.exp().clamp_min(1e-6)
+        comp = _N(mu, var.sqrt()).log_prob(s.unsqueeze(-2)).sum(-1)
+        log_p = torch.logsumexp(
+            comp + torch.log_softmax(self.salient_prior_logits, dim=-1), dim=-1)
+        return log_q - log_p
+
+    def _salient_assignment_regularizer(self, qs_m):
+        """Make mixture assignments confident without collapsing component use.
+
+        The learnable mixture prior alone can match a continuous aggregate posterior
+        with overlapping components.  This mutual-information objective minimizes
+        per-cell assignment entropy while maximizing minibatch marginal entropy:
+        components specialize, yet all remain occupied.  It is label-free and uses
+        only treated-arm posterior means.
+        """
+        q = qs_m.reshape(-1, qs_m.shape[-1])
+        mu = self.salient_prior_mu
+        var = self.salient_prior_logvar.exp().clamp_min(1e-4)
+        # Average over dimensions so temperature has the same interpretation when
+        # the salient latent width changes.
+        logits = -0.5 * ((q[:, None, :] - mu[None, :, :]).pow(2) / var[None, :, :]).mean(-1)
+        logits = (
+            logits + torch.log_softmax(self.salient_prior_logits, dim=-1)
+        ) / self.salient_assignment_temperature
+        responsibility = torch.softmax(logits, dim=-1).clamp_min(1e-8)
+        conditional_entropy = -(
+            responsibility * responsibility.log()
+        ).sum(-1).mean()
+        marginal = responsibility.mean(0).clamp_min(1e-8)
+        marginal_entropy = -(marginal * marginal.log()).sum()
+        return conditional_entropy - marginal_entropy
 
     def _generic_loss(
         self,
@@ -2331,7 +2776,10 @@ class ContrastiveVAE(BaseModuleClass):
             x, self.n_input, me_pred, self.me_reduction
         )
         kl_z = self.latent_kl_divergence(qz_m, qz_v, prior_z_m, prior_z_v)
-        kl_s = self.latent_kl_divergence(qs_m, qs_v, prior_s_m, prior_s_v)
+        if self.salient_prior_components > 0 and inference_outputs.get("s") is not None:
+            kl_s = self._salient_mixture_kl(qs_m, qs_v, inference_outputs["s"])
+        else:
+            kl_s = self.latent_kl_divergence(qs_m, qs_v, prior_s_m, prior_s_v)
         kl_library = self.library_kl_divergence(batch_index, ql_m, ql_v, library)
         losses = {
             "recon_loss": recon_loss,
@@ -2409,14 +2857,23 @@ class ContrastiveVAE(BaseModuleClass):
             inference_outputs["target"],
             generative_outputs["target"],
         )
-        reconst_loss = background_losses["recon_loss"] + target_losses["recon_loss"] + self.me_weight  * (background_losses["me_recon_loss"] + target_losses["me_recon_loss"])
-        kl_divergence_z = background_losses["kl_z"] + target_losses["kl_z"]
-        kl_divergence_s = target_losses["kl_s"]
-        kl_divergence_l = background_losses["kl_library"] + target_losses["kl_library"]
-
-        wasserstein_loss = torch.norm(
-            inference_outputs["background"]["qs_m"], dim=-1
-        ) ** 2 + torch.sum(inference_outputs["background"]["qs_v"], dim=-1)
+        if self.background_only_training:
+            reconst_loss = (
+                background_losses["recon_loss"]
+                + self.me_weight * background_losses["me_recon_loss"]
+            )
+            kl_divergence_z = background_losses["kl_z"]
+            kl_divergence_s = torch.zeros_like(background_losses["kl_z"])
+            kl_divergence_l = background_losses["kl_library"]
+            wasserstein_loss = torch.zeros_like(background_losses["kl_z"])
+        else:
+            reconst_loss = background_losses["recon_loss"] + target_losses["recon_loss"] + self.me_weight  * (background_losses["me_recon_loss"] + target_losses["me_recon_loss"])
+            kl_divergence_z = background_losses["kl_z"] + target_losses["kl_z"]
+            kl_divergence_s = target_losses["kl_s"]
+            kl_divergence_l = background_losses["kl_library"] + target_losses["kl_library"]
+            wasserstein_loss = torch.norm(
+                inference_outputs["background"]["qs_m"], dim=-1
+            ) ** 2 + torch.sum(inference_outputs["background"]["qs_v"], dim=-1)
 
         kl_local_for_warmup = kl_divergence_z + kl_divergence_s
         kl_local_no_warmup = kl_divergence_l
@@ -2435,19 +2892,81 @@ class ContrastiveVAE(BaseModuleClass):
 
         independence_penalty = None
         invariance = None
+        background_mmd = None
+        background_wasserstein = None
+        zs_independence = None
+        salient_assignment = None
+        paired_slot_reg = None
+        paired_slot_reg_stage_weight = 0.0
         if self.n_spatial_latent > 0:
             anneal = self._anneal_weight()
-            kl_divergence_sp = background_losses["kl_sp"] + target_losses["kl_sp"]
+            kl_divergence_sp = background_losses["kl_sp"]
+            if not self.background_only_training:
+                kl_divergence_sp = kl_divergence_sp + target_losses["kl_sp"]
             weighted_kl_local = (
                 weighted_kl_local + anneal * self.kl_spatial_weight * kl_divergence_sp
             )
             kl_local["kl_divergence_sp"] = kl_divergence_sp
-            independence_penalty = self._independence_penalty(inference_outputs)
+            if self.background_only_training:
+                z_bg = inference_outputs["background"]["z"]
+                z_sp_bg = inference_outputs["background"]["z_sp"]
+                independence_penalty = self._pair_penalty(
+                    z_bg.reshape(-1, z_bg.shape[-1]),
+                    z_sp_bg.reshape(-1, z_sp_bg.shape[-1]).detach(),
+                )
+            else:
+                independence_penalty = self._independence_penalty(inference_outputs)
             extra_metrics["independence_penalty"] = independence_penalty.detach()
             extra_metrics["spatial_anneal_weight"] = anneal
-            if self.spatial_attach == "both" and self.spatial_invariance_penalty > 0:
+            if (not self.background_only_training and self.spatial_attach == "both"
+                    and self.spatial_invariance_penalty > 0):
                 invariance = self._spatial_invariance_penalty(inference_outputs)
                 extra_metrics["spatial_invariance"] = invariance.detach()
+            if (not self.background_only_training
+                    and self.background_mmd_penalty > 0):
+                background_mmd = self._background_mmd(inference_outputs)
+                extra_metrics["background_mmd"] = background_mmd.detach()
+            if not self.background_only_training and self.paired_slot_reg_weight > 0:
+                paired_slot_reg_stage_weight = self._paired_slot_reg_stage_weight()
+                extra_metrics["paired_slot_reg_stage_weight"] = paired_slot_reg_stage_weight
+                if paired_slot_reg_stage_weight > 0:
+                    paired_slot_reg = self._paired_slot_reg_penalty(inference_outputs)
+                    extra_metrics["paired_slot_reg"] = paired_slot_reg.detach()
+
+        # Directional z <- s cleanup on target cells. Remove from the
+        # background posterior mean only the variation predictable from the
+        # salient posterior mean. The salient arm is detached so the optimizer
+        # cannot satisfy the loss by degrading the condition-specific signal.
+        # The standardized ridge loss is approximately an average R-squared.
+        if (not self.background_only_training
+                and self.zs_independence_penalty > 0):
+            z_target = inference_outputs["target"]["qz_m"]
+            s_target = inference_outputs["target"]["qs_m"]
+            z_target = z_target.reshape(-1, z_target.shape[-1])
+            s_target = s_target.reshape(-1, s_target.shape[-1])
+            zs_independence = self._ridge_predictability_penalty(
+                z_target, s_target.detach()
+            )
+            if self.symmetric_zs_independence:
+                # Opt-in reverse cleanup removes background-slot variation from
+                # s while retaining the legacy directional behavior by default.
+                zs_independence = (
+                    zs_independence
+                    + self._ridge_predictability_penalty(s_target, z_target.detach())
+                )
+            extra_metrics["zs_independence"] = zs_independence.detach()
+
+        if (not self.background_only_training
+                and self.background_wasserstein_penalty > 0):
+            background_wasserstein = self._background_wasserstein(inference_outputs)
+            extra_metrics["background_wasserstein"] = background_wasserstein.detach()
+
+        if (not self.background_only_training
+                and self.salient_assignment_penalty > 0):
+            salient_assignment = self._salient_assignment_regularizer(
+                inference_outputs["target"]["qs_m"]
+            )
+            extra_metrics["salient_assignment"] = salient_assignment.detach()
 
         # OPT-IN: force the salient posterior MEAN to ~0 on background-arm cells, so
         # that s_int genuinely means "signal absent in controls".
@@ -2468,7 +2987,7 @@ class ContrastiveVAE(BaseModuleClass):
         # Only the mean is penalised; adding the variance term would collapse the
         # salient posterior to a point mass on the background arm.
         salient_mean_mask = None
-        if self.mask_salient_mean_on_background:
+        if self.mask_salient_mean_on_background and not self.background_only_training:
             salient_mean_mask = torch.norm(
                 inference_outputs["background"]["qs_m"], dim=-1
             ) ** 2
@@ -2483,6 +3002,37 @@ class ContrastiveVAE(BaseModuleClass):
             loss = loss + anneal * self.lam_mi * independence_penalty
         if invariance is not None:
             loss = loss + anneal * self.spatial_invariance_penalty * invariance
+        if background_mmd is not None:
+            loss = loss + anneal * self.background_mmd_penalty * background_mmd
+        if background_wasserstein is not None:
+            loss = (
+                loss
+                + kl_weight
+                * self.background_wasserstein_penalty
+                * background_wasserstein
+            )
+        if zs_independence is not None:
+            loss = (
+                loss
+                + self._anneal_weight()
+                * self.zs_independence_penalty
+                * zs_independence
+            )
+        if salient_assignment is not None:
+            loss = (
+                loss
+                + self._anneal_weight()
+                * self.salient_assignment_penalty
+                * salient_assignment
+            )
+        if paired_slot_reg is not None:
+            loss = (
+                loss
+                + anneal
+                * paired_slot_reg_stage_weight
+                * self.paired_slot_reg_weight
+                * paired_slot_reg
+            )
 
         # LossOutput internally sums the reconst_loss, kl_local, and kl_global
         # terms before logging, so we do the same for the `wasserstein_loss` term.

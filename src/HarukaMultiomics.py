@@ -13,7 +13,6 @@ import anndata as ad
 import squidpy as sq
 import scipy.sparse
 import torch
-import scenvi
 import scvi
 import cellcharter as cc
 from pytorch_lightning import seed_everything

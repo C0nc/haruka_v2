@@ -48,7 +48,7 @@ import numpy as np
 import anndata as ad
 import scipy.sparse
 import squidpy as sq
-import scenvi
+
 import scvi
 import cellcharter as cc
 from pytorch_lightning import seed_everything
@@ -60,6 +60,28 @@ if _HERE not in sys.path:
 from Haruka import Haruka
 from HarukaMultiomics import ensure_spatial
 from haruka_cluster import FastCluster
+
+
+def _reset_training_seed(seed):
+    """Reset Lightning/Python RNGs and scvi's independent splitter seed."""
+    seed_everything(seed, workers=True)
+    scvi.settings.seed = seed
+
+
+def _compute_covet(adata, g):
+    """Load COVET lazily; pure-GAT Haruka must not import its JAX/TFP stack."""
+    try:
+        import jax.core as _jcore
+        from jax.interpreters import xla as _xla
+
+        for name in ("pytype_aval_mappings", "canonicalize_dtype_handlers"):
+            if not hasattr(_xla, name):
+                setattr(_xla, name, getattr(_jcore, name, {}))
+    except ImportError:
+        pass
+    import scenvi
+
+    return scenvi.utils.compute_covet(adata, g=g, batch_key="slice_id")
 
 __all__ = [
     "build_neighbor_index",
@@ -213,7 +235,7 @@ class HarukaSpatial(Haruka):
     def __init__(
         self,
         adata,
-        cov_gene_num=32,
+        cov_gene_num=0,
         seed=42,
         k_spatial=10,
         spatial_key="spatial",
@@ -250,6 +272,13 @@ class HarukaSpatial(Haruka):
         """
         g = self.cov_gene_num
         adata = self.adata.copy()
+        # `run_haruka.py` follows the standard scvi contract: raw counts live in
+        # `layers['counts']` while `X` is log-normalised for COVET. Rebuilding
+        # the AnnData below used to discard that layer, so setup_model silently fell
+        # back to X and trained a Poisson likelihood on log-normalised values. Keep
+        # the raw gene block now and append the same COVET target so the selected
+        # layer still has the full augmented width required by AnnData/scvi.
+        raw_counts = adata.layers["counts"] if "counts" in adata.layers else None
         if scipy.sparse.issparse(adata.X):
             adata.X = adata.X.toarray()
 
@@ -259,7 +288,7 @@ class HarukaSpatial(Haruka):
             return
 
         try:
-            _, covet_sqrt, _ = scenvi.utils.compute_covet(adata, g=g, batch_key="slice_id")
+            _, covet_sqrt, _ = _compute_covet(adata, g)
         except Exception as err:
             # The parent swallows this silently, which hides the fact that the model
             # then trains with no COVET block at all. Same fallback, but say so.
@@ -277,12 +306,23 @@ class HarukaSpatial(Haruka):
             )
             self.cov_gene_num = g_actual
 
+        covet_block = covet_sqrt.reshape(-1, g_actual * g_actual)
         new_adata = ad.AnnData(
-            X=np.concatenate(
-                [adata.X, covet_sqrt.reshape(-1, g_actual * g_actual)], axis=1
-            ),
+            X=np.concatenate([adata.X, covet_block], axis=1),
             obs=adata.obs,
         )
+        if raw_counts is not None:
+            if scipy.sparse.issparse(raw_counts):
+                raw_counts = raw_counts.toarray()
+            raw_counts = np.asarray(raw_counts)
+            if raw_counts.shape != adata.X.shape:
+                raise ValueError(
+                    "layers['counts'] must match the pre-COVET expression matrix; "
+                    f"got {raw_counts.shape} versus {adata.X.shape}"
+                )
+            new_adata.layers["counts"] = np.concatenate(
+                [raw_counts, covet_block], axis=1
+            )
         new_adata.obsm = adata.obsm
         self.input_adata = new_adata
 
@@ -326,10 +366,13 @@ class HarukaSpatial(Haruka):
     def setup_model(
         self,
         latent_dim=256,
+        salient_latent_dim=None,
+        n_hidden=128,
+        n_layers=1,
         gene_likelihood="poisson",
-        me_weight=0.3,
+        me_weight=0.0,
         me_reduction="sum",
-        batch_key="slice_id",
+        batch_key=None,
         wasserstein_penalty=0.2,
         condition_key="condition",
         condition_label="disease",
@@ -345,6 +388,7 @@ class HarukaSpatial(Haruka):
         spatial_attach="background",
         spatial_encoder="gat",
         n_attention_heads=1,
+        gat_self_query=True,
         setattn_tokens=16,
         setattn_token_dim=32,
         setattn_layers=2,
@@ -358,7 +402,19 @@ class HarukaSpatial(Haruka):
         mmd_bandwidth="median",
         mi_debias=True,
         penalize_salient_spatial=False,
+        salient_within_penalty=0.0,
+        spatial_pair_penalty=0.0,
+        condition_only_salient_spatial=False,
+        salient_prior_components=0,
+        salient_assignment_penalty=0.0,
+        salient_assignment_temperature=1.0,
+        paired_slot_reg_weight=0.0,
+        paired_slot_reg_alpha=1e-3,
+        paired_slot_reg_start_epoch=0,
+        paired_slot_reg_ramp_epochs=0,
+        background_representation="full",
         spatial_invariance_penalty=0.5,
+        background_mmd_penalty=0.0,
         mask_salient_mean_on_background=False,
         me_from_background_only=False,
         sw_n_proj=64,
@@ -372,6 +428,9 @@ class HarukaSpatial(Haruka):
 
         Parameters beyond the parent's are all spatial controls.
 
+        n_hidden
+            Width of the encoder and decoder hidden layers. The default is 128;
+            increasing this changes network capacity without changing latent widths.
         niche_context
             Make the EXISTING background and salient latents niche-aware, by giving
             each encoder its own pooled summary of the cell's neighborhood as extra
@@ -551,6 +610,20 @@ class HarukaSpatial(Haruka):
             spatial latent's niche probe is also better with it off (0.708 vs
             0.606). It was harmless before only because the MMD penalty it rode on
             delivered no dependence-carrying gradient.
+        background_representation
+            ``"full"`` returns every background posterior dimension. ``"private"``
+            keeps the trailing GAT-source dimensions internal to reconstruction and
+            spatial inference, and returns only the preceding intrinsic dimensions
+            from ``get_latent_representation("background")``. The private mode is
+            valid only for a background-attached GAT with at least one private
+            dimension.
+        paired_slot_reg_weight, paired_slot_reg_alpha
+            Weight and ridge strength for the differentiable linear-predictability
+            penalty between the background/salient-spatial slots and the shared
+            spatial slot. The nuisance spatial slot is detached.
+        paired_slot_reg_start_epoch, paired_slot_reg_ramp_epochs
+            Optional second-stage schedule for that penalty. It is zero before the
+            start epoch and then either switches on or ramps linearly.
         mae_epochs
             Epochs of denoising corruption at the start of training, during which
             a random ``permutation_rate`` fraction of genes is shuffled across
@@ -562,6 +635,13 @@ class HarukaSpatial(Haruka):
             Ramps the spatial KL and the independence penalty in over this many
             epochs.
         """
+        # Reset every RNG at model construction, not only in the multiomics and
+        # clustering wrappers. Without this, --seed changed the output directory
+        # name but sequential RNA fits inherited the previous fit's RNG state.
+        # scvi's data splitter reads its own global seed in addition to Lightning.
+        _reset_training_seed(seed)
+        self.seed = seed
+
         if self.input_adata is None:
             self.construct_cov()
 
@@ -589,8 +669,16 @@ class HarukaSpatial(Haruka):
             )
             self.prepare_spatial_graph()
 
-        if layer is None and "counts" in self.input_adata.layers:
-            layer = "counts"
+        if layer is None:
+            if "counts" in self.input_adata.layers:
+                layer = "counts"
+            elif "counts" in self.adata.layers:
+                raise RuntimeError(
+                    "Raw counts were present before COVET construction but are missing "
+                    "from the augmented AnnData. Refusing to fit a count likelihood to "
+                    "log-normalised X."
+                )
+        self.training_layer_ = layer
 
         scvi.external.ContrastiveVI.setup_anndata(
             self.input_adata,
@@ -609,8 +697,17 @@ class HarukaSpatial(Haruka):
         self.model = scvi.external.ContrastiveVI(
             self.input_adata,
             n_me=self.cov_gene_num * self.cov_gene_num,
-            n_salient_latent=latent_dim,
+            # Untied from the background latent. They were both `latent_dim`, so a
+            # binary salient factor got the same 32 dims as a 7-class cell-type
+            # factor. Excess capacity in `s` is a candidate source of the anatomy
+            # leak: the only intervention that has ever reduced it was ADDING
+            # capacity elsewhere (n_spatial_latent 16->32 took the leak 0.723 ->
+            # 0.589), while both constraint-based fixes made it worse.
+            n_salient_latent=(latent_dim if salient_latent_dim is None
+                              else salient_latent_dim),
             n_background_latent=latent_dim,
+            n_hidden=n_hidden,
+            n_layers=n_layers,
             use_observed_lib_size=True,
             wasserstein_penalty=wasserstein_penalty,
             gene_likelihood=gene_likelihood,
@@ -620,6 +717,7 @@ class HarukaSpatial(Haruka):
             spatial_attach=spatial_attach,
             spatial_encoder=spatial_encoder,
             n_attention_heads=n_attention_heads,
+            gat_self_query=gat_self_query,
             setattn_tokens=setattn_tokens,
             setattn_token_dim=setattn_token_dim,
             setattn_layers=setattn_layers,
@@ -633,7 +731,19 @@ class HarukaSpatial(Haruka):
             mmd_bandwidth=mmd_bandwidth,
             mi_debias=mi_debias,
             penalize_salient_spatial=penalize_salient_spatial,
+            salient_within_penalty=salient_within_penalty,
+            spatial_pair_penalty=spatial_pair_penalty,
+            condition_only_salient_spatial=condition_only_salient_spatial,
+            salient_prior_components=salient_prior_components,
+            salient_assignment_penalty=salient_assignment_penalty,
+            salient_assignment_temperature=salient_assignment_temperature,
+            paired_slot_reg_weight=paired_slot_reg_weight,
+            paired_slot_reg_alpha=paired_slot_reg_alpha,
+            paired_slot_reg_start_epoch=paired_slot_reg_start_epoch,
+            paired_slot_reg_ramp_epochs=paired_slot_reg_ramp_epochs,
+            background_representation=background_representation,
             spatial_invariance_penalty=spatial_invariance_penalty,
+            background_mmd_penalty=background_mmd_penalty,
             mask_salient_mean_on_background=mask_salient_mean_on_background,
             me_from_background_only=me_from_background_only,
             sw_n_proj=sw_n_proj,

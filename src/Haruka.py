@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as  np
 
 
-import scenvi
 import anndata as ad 
 import numpy as np
 
@@ -31,6 +30,27 @@ from pytorch_lightning import seed_everything
 
 import pytorch_lightning as pl
 
+
+def _compute_covet(adata, g):
+    """Load the legacy COVET stack only for an explicit COVET run."""
+    try:
+        import jax.core as _jcore
+        from jax.interpreters import xla as _xla
+
+        for name in ("pytype_aval_mappings", "canonicalize_dtype_handlers"):
+            if not hasattr(_xla, name):
+                setattr(_xla, name, getattr(_jcore, name, {}))
+    except ImportError:
+        pass
+    import scenvi
+
+    try:
+        return scenvi.utils.compute_covet(
+            adata, g=g, batch_key="slice_id", batch_size=100000
+        )
+    except TypeError:
+        return scenvi.utils.compute_covet(adata, g=g, batch_key="slice_id")
+
 class Haruka():
     def __init__(self, adata, cov_gene_num=32, seed=42):
         self.adata = adata
@@ -45,6 +65,10 @@ class Haruka():
 
         g = self.cov_gene_num
         adata = self.adata.copy()
+        # Preserve the raw-count contract across the COVET augmentation. Without
+        # this, setup_model cannot find `layers['counts']` and a count likelihood
+        # is fitted to the log-normalised matrix in X.
+        raw_counts = adata.layers["counts"] if "counts" in adata.layers else None
 
         if scipy.sparse.issparse(adata.X):
             adata.X  = adata.X.toarray()
@@ -55,14 +79,7 @@ class Haruka():
             return
 
         try:
-            covet, covet_sqrt, gene = scenvi.utils.compute_covet(adata, g=g, batch_key='slice_id', batch_size=100000)
-        except TypeError:
-            try:
-                covet, covet_sqrt, gene = scenvi.utils.compute_covet(adata, g=g, batch_key='slice_id')
-            except Exception:
-                self.input_adata = adata
-                self.cov_gene_num = 0
-                return
+            covet, covet_sqrt, gene = _compute_covet(adata, g)
         except Exception:
             self.input_adata = adata
             self.cov_gene_num = 0
@@ -71,14 +88,35 @@ class Haruka():
         if g == -1 :
             g = adata.X.shape[1]
 
-        new_adata = ad.AnnData(X=np.concatenate([adata.X, covet_sqrt.reshape(-1, g*g)], axis=1), obs=adata.obs)
+        covet_block = covet_sqrt.reshape(-1, g*g)
+        new_adata = ad.AnnData(X=np.concatenate([adata.X, covet_block], axis=1), obs=adata.obs)
+        if raw_counts is not None:
+            if scipy.sparse.issparse(raw_counts):
+                raw_counts = raw_counts.toarray()
+            raw_counts = np.asarray(raw_counts)
+            if raw_counts.shape != adata.X.shape:
+                raise ValueError(
+                    "layers['counts'] must match the pre-COVET expression matrix; "
+                    f"got {raw_counts.shape} versus {adata.X.shape}"
+                )
+            new_adata.layers["counts"] = np.concatenate(
+                [raw_counts, covet_block], axis=1
+            )
         new_adata.obsm = adata.obsm
         self.input_adata = new_adata
     
     def setup_model(self, latent_dim=256, gene_likelihood='poisson', me_weight=0.3, batch_key='slice_id', wasserstein_penalty=0.2, condition_key='condition', condition_label='disease', seed=42, layer=None):
         # Use counts layer if present to satisfy ContrastiveVI count-data requirement
-        if layer is None and "counts" in self.input_adata.layers:
-            layer = "counts"
+        if layer is None:
+            if "counts" in self.input_adata.layers:
+                layer = "counts"
+            elif "counts" in self.adata.layers:
+                raise RuntimeError(
+                    "Raw counts were present before COVET construction but are missing "
+                    "from the augmented AnnData. Refusing to fit a count likelihood to "
+                    "log-normalised X."
+                )
+        self.training_layer_ = layer
         scvi.external.ContrastiveVI.setup_anndata(self.input_adata, batch_key=batch_key, layer=layer)
 
         self.model = scvi.external.ContrastiveVI(
@@ -179,5 +217,3 @@ class Haruka():
         model.fit(self.output_adata, use_rep='X_cellcharter_background')
 
         self.output_adata.obs['cluster_haruka_background'] = model.predict(self.output_adata, use_rep='X_cellcharter_background')
-
-

@@ -122,6 +122,7 @@ class ContrastiveVI(BaseModelClass):
         spatial_attach: str = "background",
         spatial_encoder: str = "gat",
         n_attention_heads: int = 1,
+        gat_self_query: bool = True,
         setattn_tokens: int = 16,
         setattn_token_dim: int = 32,
         setattn_layers: int = 2,
@@ -135,7 +136,24 @@ class ContrastiveVI(BaseModelClass):
         mmd_bandwidth: str = "median",
         mi_debias: bool = True,
         penalize_salient_spatial: bool = False,
+        salient_within_penalty: float = 0.0,
+        spatial_pair_penalty: float = 0.0,
+        condition_only_salient_spatial: bool = False,
+        salient_prior_components: int = 0,
+        salient_assignment_penalty: float = 0.0,
+        salient_assignment_temperature: float = 1.0,
+        paired_slot_reg_weight: float = 0.0,
+        paired_slot_reg_alpha: float = 1e-3,
+        paired_slot_reg_start_epoch: int = 0,
+        paired_slot_reg_ramp_epochs: int = 0,
+        background_representation: str = "full",
         spatial_invariance_penalty: float = 0.5,
+        background_mmd_penalty: float = 0.0,
+        background_wasserstein_penalty: float = 0.0,
+        zs_independence_penalty: float = 0.0,
+        symmetric_zs_independence: bool = False,
+        detach_target_z_for_composition: bool = False,
+        batch_injection_mode: str = "all",
         mask_salient_mean_on_background: bool = False,
         me_from_background_only: bool = False,
         sw_n_proj: int = 64,
@@ -188,6 +206,7 @@ class ContrastiveVI(BaseModelClass):
             spatial_attach=spatial_attach,
             spatial_encoder=spatial_encoder,
             n_attention_heads=n_attention_heads,
+            gat_self_query=gat_self_query,
             setattn_tokens=setattn_tokens,
             setattn_token_dim=setattn_token_dim,
             setattn_layers=setattn_layers,
@@ -201,7 +220,24 @@ class ContrastiveVI(BaseModelClass):
             mmd_bandwidth=mmd_bandwidth,
             mi_debias=mi_debias,
             penalize_salient_spatial=penalize_salient_spatial,
+            salient_within_penalty=salient_within_penalty,
+            spatial_pair_penalty=spatial_pair_penalty,
+            condition_only_salient_spatial=condition_only_salient_spatial,
+            salient_prior_components=salient_prior_components,
+            salient_assignment_penalty=salient_assignment_penalty,
+            salient_assignment_temperature=salient_assignment_temperature,
+            paired_slot_reg_weight=paired_slot_reg_weight,
+            paired_slot_reg_alpha=paired_slot_reg_alpha,
+            paired_slot_reg_start_epoch=paired_slot_reg_start_epoch,
+            paired_slot_reg_ramp_epochs=paired_slot_reg_ramp_epochs,
+            background_representation=background_representation,
             spatial_invariance_penalty=spatial_invariance_penalty,
+            background_mmd_penalty=background_mmd_penalty,
+            background_wasserstein_penalty=background_wasserstein_penalty,
+            zs_independence_penalty=zs_independence_penalty,
+            symmetric_zs_independence=symmetric_zs_independence,
+            detach_target_z_for_composition=detach_target_z_for_composition,
+            batch_injection_mode=batch_injection_mode,
             mask_salient_mean_on_background=mask_salient_mean_on_background,
             me_from_background_only=me_from_background_only,
             sw_n_proj=sw_n_proj,
@@ -223,6 +259,7 @@ class ContrastiveVI(BaseModelClass):
             f"n_layers: {n_layers}, dropout_rate: {dropout_rate}, "
             f"use_observed_lib_size: {use_observed_lib_size}, "
             f"wasserstein_penalty: {wasserstein_penalty}, "
+            f"batch_injection_mode: {batch_injection_mode}, "
             f"n_spatial_latent: {n_spatial_latent}, "
             f"spatial_encoder: {spatial_encoder if n_spatial_latent else 'off'}, "
             f"niche_context: {context_pool if niche_context else 'off'}"
@@ -607,8 +644,10 @@ class ContrastiveVI(BaseModelClass):
             Mini-batch size for data loading into model. Defaults to
             `scvi.settings.batch_size`.
         representation_kind
-            One of "background", "salient", or "spatial". "spatial" requires the model
-            to have been built with `n_spatial_latent > 0`.
+            One of "background", "salient", "spatial", or "salient_spatial".
+            Spatial kinds require ``n_spatial_latent > 0``. When the model uses
+            ``background_representation="private"``, the background result excludes
+            the trailing dimensions reserved as the internal GAT source.
 
         Returns
         -------
@@ -667,6 +706,13 @@ class ContrastiveVI(BaseModelClass):
             if representation_kind == "background":
                 latent_m = outputs["qz_m"]
                 latent_sample = outputs["z"]
+                if self.module.background_representation == "private":
+                    # The trailing dimensions are the GAT's source features. They
+                    # remain available to reconstruction and spatial inference but
+                    # are not part of the public intrinsic representation.
+                    stop = -self.module.n_spatial_latent
+                    latent_m = latent_m[..., :stop]
+                    latent_sample = latent_sample[..., :stop]
             elif representation_kind == "spatial":
                 latent_m = outputs["qsp_m"]
                 latent_sample = outputs["z_sp"]
