@@ -13,6 +13,9 @@ Exercise-specific niche dependence = niche R^2 in exercise cells - in control ce
 Drivers: per neighbour type, Spearman(readout, proportion) within each mouse; exercise mean - control mean, and in
 how many of the 4 exercise mice the sign holds.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import os, warnings
 os.environ.setdefault('OPENBLAS_NUM_THREADS', '8'); os.environ.setdefault('OMP_NUM_THREADS', '8')
 import numpy as np, pandas as pd, anndata as ad
@@ -21,9 +24,9 @@ from scipy.stats import spearmanr
 from sklearn.neighbors import NearestNeighbors
 from sklearn.linear_model import RidgeCV
 warnings.filterwarnings('ignore')
-OUT = Path('/home/yancui/haruka_v2/figures_paper/exercise')
+OUT = Path(f'{_HR}/figures_paper/exercise')
 VAS = ['Endothelial', 'Pericyte', 'VLMC', 'VSMC']
-h = ad.read_h5ad('/project/zhihuanglab/yancui/haruka_exercise/data/exercise_old_full.h5ad', backed='r'); o = h.obs
+h = ad.read_h5ad(f'{_HW}/haruka_exercise/data/exercise_old_full.h5ad', backed='r'); o = h.obs
 ct = o.celltype.astype(str).to_numpy(); mouse = o.mouse_id.astype(str).to_numpy(); xy = np.asarray(h.obsm['spatial'], float)[:, :2]
 types = sorted(set(ct)); code = pd.Series(range(len(types)), index=types)[ct].to_numpy()
 names = np.asarray(h.obs_names).astype(str)

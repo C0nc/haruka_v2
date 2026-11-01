@@ -12,13 +12,15 @@ For every official Abeta object (4 AD donors + Ctl-3, which also carries plaques
               into a GM-vs-WM contrast
 Plaque attributes kept: class (dense/diffuse), area, in-object A-beta / ApoE intensity, region.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad
 from sklearn.neighbors import NearestNeighbors
 
-W = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/wholeslice')
-SRC = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/external/CODEX-CNS/codex_notebooks/marker_intensities')
-M = Path('/home/yancui/haruka_v2/results_codex_wholeslice/codex_wholeslice_all7_no_oligo/'
+W = Path(f'{_HR}/bench_codex_cns_2026/wholeslice')
+SRC = Path(f'{_HR}/bench_codex_cns_2026/external/CODEX-CNS/codex_notebooks/marker_intensities')
+M = Path(f'{_HR}/results_codex_wholeslice/codex_wholeslice_all7_no_oligo/'
          'haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0')
 PX = 0.3774
 K, MAXD = 10, 80.0

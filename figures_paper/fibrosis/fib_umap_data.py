@@ -3,6 +3,9 @@
 label, sampled per region (<= 5000 cells each, all cells for smaller regions) so rare lesions such as fibroblastic foci are
 visible; the same cells for z and s.  UMAP on the standardised latent: 15 neighbours, min_dist 0.3, random_state 0.
 -> data/umap.npz (umap_z, umap_s, region, lineage, cell_type)"""
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import os, warnings
 for v in ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS']: os.environ.setdefault(v, '8')
 os.environ.setdefault('NUMPY_MADVISE_HUGEPAGE', '0')
@@ -10,11 +13,11 @@ import numpy as np, pandas as pd, anndata as ad, umap
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 warnings.filterwarnings('ignore')
-H = Path('/home/yancui/haruka_v2'); OUT = H / 'figures_paper/fibrosis/data'
+H = Path(f'{_HR}'); OUT = H / 'figures_paper/fibrosis/data'
 MD = H / 'results_real_compgated_nb_final/gse250346_unaffected_vs_all_fibrosis/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
 o = ad.read_h5ad(H / 'bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad', backed='r').obs
 pos = pd.Series(np.arange(len(o)), index=o.index)
-d = pd.read_csv('/project/zhihuanglab/yancui/haruka_fibrosis_he/he_annot_matched.csv.gz', usecols=['obs', 'annotation_type', 'stage'])
+d = pd.read_csv(f'{_HW}/haruka_fibrosis_he/he_annot_matched.csv.gz', usecols=['obs', 'annotation_type', 'stage'])
 d = d[d.stage != 'Unaffected'].drop_duplicates(['obs', 'annotation_type']); d = d[~d.obs.duplicated(keep=False)]
 d['i'] = pos.reindex(d.obs).to_numpy()
 rng = np.random.default_rng(0)

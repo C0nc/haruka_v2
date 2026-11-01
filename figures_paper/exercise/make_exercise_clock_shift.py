@@ -9,6 +9,9 @@ Stratum = cell type x subregion. Shift = mean over exercise mice - mean over con
 mean (mouse is the unit; >= 20 cells per mouse-stratum, >= 3 mice per arm). Welch t on mouse means for observed.
 Panels (one SVG each): a observed, b from z, c from s (own colour scales, blue = younger); d predicted vs observed.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import os, sys, warnings
 os.environ.setdefault('OPENBLAS_NUM_THREADS', '8'); os.environ.setdefault('OMP_NUM_THREADS', '8')
 import numpy as np, pandas as pd
@@ -19,12 +22,12 @@ from sklearn.preprocessing import StandardScaler
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/home/yancui/haruka_v2/figures_paper'); import paperstyle as ps
+sys.path.insert(0, f'{_HR}/figures_paper'); import paperstyle as ps
 ps.setup()
-OUT = Path('/home/yancui/haruka_v2/figures_paper/exercise'); OUT.mkdir(exist_ok=True)
-MD = sorted(Path('/project/zhihuanglab/yancui/haruka_exercise/results_w10_s100/exercise_old_full').glob('*/'))[0]
+OUT = Path(f'{_HR}/figures_paper/exercise'); OUT.mkdir(exist_ok=True)
+MD = sorted(Path(f'{_HW}/haruka_exercise/results_w10_s100/exercise_old_full').glob('*/'))[0]
 names = pd.Index(np.load(MD / 'obs_names.npy', allow_pickle=True).astype(str))
-C = pd.read_csv('/project/zhihuanglab/yancui/haruka_exercise/clock/spatial_clock_predictions.csv.gz').set_index('cell_id').reindex(names)
+C = pd.read_csv(f'{_HW}/haruka_exercise/clock/spatial_clock_predictions.csv.gz').set_index('cell_id').reindex(names)
 Z = np.load(MD / 'background.npy').astype(np.float64); S = np.load(MD / 'salient.npy').astype(np.float64)
 age = C.predicted_age.to_numpy(); ct = C.celltype.astype(str).to_numpy(); mouse = C.mouse_id.astype(str).to_numpy()
 sub = C.subregion.astype(str).to_numpy(); ex = (C.condition.astype(str) == 'exercise').to_numpy(); ok = np.isfinite(age)

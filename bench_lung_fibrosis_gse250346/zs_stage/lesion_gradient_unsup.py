@@ -8,6 +8,9 @@ L cell).  Per lesion L x cell type (>= 1000 cells, >= 4 donors; <= 15000 cells s
 Readout: Pearson r(axis, distance in um) inside each core (>= 50 cells), averaged over cores weighted by n while
 keeping the sign (an axis must point the same way in every core), then |.|.  z vs s paired over lesion x cell type.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import os, warnings
 for v in ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS']: os.environ.setdefault(v, '8')
 os.environ.setdefault('NUMPY_MADVISE_HUGEPAGE', '0')
@@ -18,7 +21,7 @@ from scipy.stats import wilcoxon
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 warnings.filterwarnings('ignore')
-H = Path('/home/yancui/haruka_v2'); OUT = H / 'bench_lung_fibrosis_gse250346/zs_stage/lesion_gradient'
+H = Path(f'{_HR}'); OUT = H / 'bench_lung_fibrosis_gse250346/zs_stage/lesion_gradient'
 MD = H / 'results_real_compgated_nb_final/gse250346_unaffected_vs_all_fibrosis/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
 o = ad.read_h5ad(H / 'bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad', backed='r').obs
 log = open(OUT / 'lesion_gradient_unsup.log', 'w')
@@ -28,7 +31,7 @@ pd.set_option('display.width', 250)
 stage = o.sample_affect.astype(str).to_numpy(); core = o['sample'].astype(str).to_numpy(); ctA = o.cell_type.astype(str).to_numpy(); donA = o.donor.astype(str).to_numpy()
 xy = np.c_[o.x_centroid.to_numpy(float), o.y_centroid.to_numpy(float)]
 pos = pd.Series(np.arange(len(o)), index=o.index)
-he = pd.read_csv('/project/zhihuanglab/yancui/haruka_fibrosis_he/he_annot_matched.csv.gz', usecols=['obs', 'annotation_type']); he['i'] = pos.reindex(he.obs).to_numpy()
+he = pd.read_csv(f'{_HW}/haruka_fibrosis_he/he_annot_matched.csv.gz', usecols=['obs', 'annotation_type']); he['i'] = pos.reindex(he.obs).to_numpy()
 Zm = np.load(MD / 'background.npy', mmap_mode='r'); Sm = np.load(MD / 'salient.npy', mmap_mode='r')
 def centre(M, g):
     M = np.asarray(M, np.float64).copy()

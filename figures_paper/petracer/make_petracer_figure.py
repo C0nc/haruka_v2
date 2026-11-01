@@ -10,6 +10,8 @@ neighbour-only). Lineage (clone) is never seen by the model.
 Held-out clone: multinomial logistic (C = 0.1, balanced), GroupKFold(5) over 150 um spatial blocks, as in lineage_test.py.
 UMAP: 15 neighbours, min_dist 0.3, random_state 0.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, warnings
 import numpy as np, pandas as pd, anndata as ad, umap
 from pathlib import Path
@@ -19,10 +21,10 @@ from sklearn.model_selection import GroupKFold
 from sklearn.metrics import balanced_accuracy_score
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/home/yancui/haruka_v2/figures_paper'); import paperstyle as ps
+sys.path.insert(0, f'{_HR}/figures_paper'); import paperstyle as ps
 ps.setup(); MM = ps.MM; SZ = 46 * MM
-OUT = Path('/home/yancui/haruka_v2/figures_paper/petracer'); OUT.mkdir(exist_ok=True)
-D = Path('/home/yancui/haruka_v2/bench_petracer_lineage/m2_lineage')
+OUT = Path(f'{_HR}/figures_paper/petracer'); OUT.mkdir(exist_ok=True)
+D = Path(f'{_HR}/bench_petracer_lineage/m2_lineage')
 MD = D / 'fits/petracer_M2-1_lineage/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
 a = ad.read_h5ad(D / 'petracer_M2-1_lineage.h5ad', backed='r'); o = a.obs
 assert (np.load(MD / 'obs_names.npy', allow_pickle=True).astype(str) == np.asarray(a.obs_names).astype(str)).all()

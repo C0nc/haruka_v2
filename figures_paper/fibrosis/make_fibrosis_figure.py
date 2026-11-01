@@ -13,6 +13,8 @@ fibrosis-core (condition) cells only.  Ground truth = pathologist H&E region ann
   (a, b carry a dashed box marking the window shown in c, d)
 Sources: bench_lung_fibrosis_gse250346/zs_stage/{he_region,lesion_gradient}/ and figures_paper/fibrosis/data/ (fib_fig_data.py).
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, warnings
 import numpy as np, pandas as pd
 from pathlib import Path
@@ -20,10 +22,10 @@ import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from PIL import Image
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/home/yancui/haruka_v2/figures_paper'); import paperstyle as ps
+sys.path.insert(0, f'{_HR}/figures_paper'); import paperstyle as ps
 ps.setup(); MM = ps.MM
-OUT = Path('/home/yancui/haruka_v2/figures_paper/fibrosis'); DAT = OUT / 'data'
-Z = Path('/home/yancui/haruka_v2/bench_lung_fibrosis_gse250346/zs_stage')
+OUT = Path(f'{_HR}/figures_paper/fibrosis'); DAT = OUT / 'data'
+Z = Path(f'{_HR}/bench_lung_fibrosis_gse250346/zs_stage')
 CZ, CS = ps.LATENT['z'], ps.LATENT['s']
 # lesion colours drawn from the shared palette roles (distinct hues; fibrosis background kept neutral)
 LES = {'fibroblastic_focus': ps.DOMAIN[1], 'mixed_inflammation': ps.DOMAIN[2], 'TLS': ps.REGION['VEN'],

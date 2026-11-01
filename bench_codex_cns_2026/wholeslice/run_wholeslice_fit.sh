@@ -3,8 +3,8 @@
 # usage: run_wholeslice_fit.sh <variant: all7_no_oligo|full3> <gpu>
 set -euo pipefail
 V=$1; export CUDA_VISIBLE_DEVICES=$2
-ROOT=/home/yancui/haruka_v2
-PY=/home/yancui/.conda/envs/haruka2/bin/python
+ROOT=${HARUKA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)}
+PY=${HARUKA_PY:-python}
 RUNNER=$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py
 CC=$ROOT/bench_kras_xenium/rebuild_condition_only_salient_cc.py
 PLOT=$ROOT/bench_real_discovery/plot_sample_batch_umaps.py

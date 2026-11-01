@@ -6,13 +6,15 @@ clusters, so agreement with the marker-profile labels is an independent check.
 IBA1 and CD11b are pan-myeloid (every cell was selected IBA1+) and are excluded.
 Donor is a design covariate so donor intensity offsets don't drive the calls.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import numpy as np, pandas as pd, anndata as ad, torch
 from pathlib import Path
 from astir import Astir
 from sklearn.metrics import adjusted_rand_score
 
-OUT = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/celltype_annotation')
-a = ad.read_h5ad('/home/yancui/haruka_v2/bench_codex_cns_2026/data/processed/codex_cns_myeloid_primary_no_aml_no_combat.h5ad')
+OUT = Path(f'{_HR}/bench_codex_cns_2026/celltype_annotation')
+a = ad.read_h5ad(f'{_HR}/bench_codex_cns_2026/data/processed/codex_cns_myeloid_primary_no_aml_no_combat.h5ad')
 expr = pd.DataFrame(np.asarray(a.layers['log1p_intensity'], float), index=a.obs_names.astype(str), columns=list(a.var_names))
 donor = a.obs.donor_id.astype(str)
 design = pd.get_dummies(donor).astype(float); design.insert(0, 'intercept', 1.0)

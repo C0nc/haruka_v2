@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Optimise the 7-region Morandi palette for regions that actually TOUCH in tissue."""
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, numpy as np, anndata as ad
 from sklearn.neighbors import NearestNeighbors
-sys.path.insert(0, '/home/yancui/haruka_v2/figures_paper/palette')
+sys.path.insert(0, f'{_HR}/figures_paper/palette')
 from search_morandi import oklch_to_srgb, lin_to_srgb, lin_to_oklab, CVD, to_hex
 
-a = ad.read_h5ad('/home/yancui/haruka_v2/bench_mouse_brain_scviva/data_composition_pairs_all/mouse_brain_B5_paired.h5ad', backed='r')
+a = ad.read_h5ad(f'{_HR}/bench_mouse_brain_scviva/data_composition_pairs_all/mouse_brain_B5_paired.h5ad', backed='r')
 dis = a.obs.condition.astype(str).to_numpy() == 'disease'
 y = a.obs.gt_background_subregion.astype(str).to_numpy()[dis]; xy = np.asarray(a.obsm['spatial'])[dis]; a.file.close()
 cls = sorted(np.unique(y)); idx = {c: i for i, c in enumerate(cls)}; yi = np.array([idx[c] for c in y])

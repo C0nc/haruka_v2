@@ -9,6 +9,8 @@ halo    = malignant cells, buffer-band cells, and cell types not present in both
 Segmentation: authors' obs['within_tumor'] / tumor_boundary_dist, cross-checked with
 k-means on k=20 neighbour cell-type composition.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import json
 from pathlib import Path
 
@@ -21,7 +23,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score
 
 SRC = Path("/home/yancui/Jill/fourteen/petracer_data/M2_tumor_tracing.h5td")
-OUT = Path("/home/yancui/haruka_v2/bench_petracer_lineage/reaudit_2026-10-16")
+OUT = Path(f"{_HR}/bench_petracer_lineage/reaudit_2026-10-16")
 SECTION, K, MIN_CELLS = "M2-1", 20, 200
 
 with h5py.File(SRC, "r") as h:

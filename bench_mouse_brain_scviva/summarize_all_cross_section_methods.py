@@ -1,6 +1,8 @@
 """Aggregate all direct-KMeans mouse-brain benchmarks over independent sections."""
 
 from __future__ import annotations
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 
 import json
 from pathlib import Path
@@ -11,7 +13,7 @@ import pandas as pd
 from scipy import stats
 
 
-ROOT = Path("/home/yancui/haruka_v2/bench_mouse_brain_scviva")
+ROOT = Path(f"{_HR}/bench_mouse_brain_scviva")
 RESULTS = ROOT / "results_cross_section"
 OUT = RESULTS / "summary_all_methods"
 SECTIONS = ["A8", "A9", "B17", "B3", "B5"]

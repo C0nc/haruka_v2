@@ -8,12 +8,14 @@
            top-enriched domains covering 20% of cells (z vs s)
   shift    Haruka's counterfactual salient composition shift (microglia column) by distance bin
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import numpy as np, pandas as pd, anndata as ad, warnings
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.metrics import normalized_mutual_info_score as nmi
 warnings.filterwarnings('ignore')
 from pathlib import Path
-H = Path('/home/yancui/haruka_v2'); OUT = Path(__file__).resolve().parent
+H = Path(f'{_HR}'); OUT = Path(__file__).resolve().parent
 
 
 def summarise(tag, dom, near):

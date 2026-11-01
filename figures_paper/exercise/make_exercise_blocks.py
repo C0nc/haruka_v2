@@ -8,6 +8,9 @@
 Fit: weights 10 / 100, batch = run. Held-out predictions from make_exercise_clock_shift.py.
 UMAP: 15 neighbours, min_dist 0.3, random_state 0; 40,000 cells (row 1) and 30,000 vascular cells (row 2).
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import sys, warnings
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad
@@ -16,10 +19,10 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 import umap
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/home/yancui/haruka_v2/figures_paper'); import paperstyle as ps
+sys.path.insert(0, f'{_HR}/figures_paper'); import paperstyle as ps
 ps.setup()
-OUT = Path('/home/yancui/haruka_v2/figures_paper/exercise')
-MD = sorted(Path('/project/zhihuanglab/yancui/haruka_exercise/results_w10_s100/exercise_old_full').glob('*/'))[0]
+OUT = Path(f'{_HR}/figures_paper/exercise')
+MD = sorted(Path(f'{_HW}/haruka_exercise/results_w10_s100/exercise_old_full').glob('*/'))[0]
 DIV = LinearSegmentedColormap.from_list('div', ps.DIVERGING); SZ = 46 * ps.MM
 VAS = ['Endothelial', 'Pericyte', 'VLMC', 'VSMC']
 GROUP = {'Neuron-Inhibitory': 'Neuron', 'Neuron-Excitatory': 'Neuron', 'Neuron-MSN': 'Neuron', 'Neuroblast': 'Neuron',
@@ -28,7 +31,7 @@ GROUP = {'Neuron-Inhibitory': 'Neuron', 'Neuron-Excitatory': 'Neuron', 'Neuron-M
 GCOL = {**ps.MAJOR, 'Other': ps.NEUTRAL['mid']}
 VCOL = {'Endothelial': '#7B524F', 'Pericyte': '#C48A62', 'VLMC': '#93A9C6', 'VSMC': '#82A86F'}
 
-h = ad.read_h5ad('/project/zhihuanglab/yancui/haruka_exercise/data/exercise_old_full.h5ad', backed='r'); o = h.obs
+h = ad.read_h5ad(f'{_HW}/haruka_exercise/data/exercise_old_full.h5ad', backed='r'); o = h.obs
 names = np.asarray(h.obs_names).astype(str)
 assert (np.load(MD / 'obs_names.npy', allow_pickle=True).astype(str) == names).all()
 ct = o.celltype.astype(str).to_numpy(); grp = np.array([GROUP.get(c, 'Other') for c in ct])

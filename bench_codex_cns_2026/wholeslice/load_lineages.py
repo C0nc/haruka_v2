@@ -1,9 +1,11 @@
 """Load every lineage segmentation (IBA1/GFAP/NeuN/Olig2) with the harmonised panel."""
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import json, ast
 from pathlib import Path
 import numpy as np, pandas as pd
 
-SRC = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/external/CODEX-CNS/codex_notebooks')
+SRC = Path(f'{_HR}/bench_codex_cns_2026/external/CODEX-CNS/codex_notebooks')
 DONORS = {'2997': 'AD-2', '3155': 'AD-1', '3196': 'AD-3', '3280': 'AD-4', '1796': 'Ctl-3',
           '3628': 'Ctl-2', '3026': 'Ctl-1', '1873': 'Ctl-4'}
 LINEAGE = {'iba': 'Myeloid', 'gfap': 'Astrocyte', 'neun': 'Neuron', 'olig2': 'Oligodendrocyte'}

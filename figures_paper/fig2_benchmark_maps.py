@@ -8,6 +8,8 @@ pick colours, so a region drawn the same colour as the truth is the cluster that
 best overlaps it; the ARI is computed on the raw labels, not the matched ones.
 """
 from __future__ import annotations
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import argparse, json
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad
@@ -20,8 +22,8 @@ from matplotlib import gridspec
 from matplotlib.patches import Patch
 import matplotlib.patheffects as pe
 
-B = Path('/home/yancui/haruka_v2/bench_mouse_brain_scviva')
-OUT = Path('/home/yancui/haruka_v2/figures_paper')
+B = Path(f'{_HR}/bench_mouse_brain_scviva')
+OUT = Path(f'{_HR}/figures_paper')
 DATA = B / 'data_composition_pairs_all'      # verified: reproduces both bg and salient ARIs exactly
 BG_COL = ['#0072B2','#E69F00','#009E73','#CC79A7','#56B4E9','#D55E00','#882255']  # validated, all-pairs
 SAL_COL = ['#2a78d6','#eb6834','#1baf7a']                                          # validated, all-pairs

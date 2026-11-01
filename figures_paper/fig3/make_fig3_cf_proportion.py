@@ -11,6 +11,8 @@ For each AD cell the composition head gives
          diamond = observed change
 Source: bench_real_discovery/cc_shift_info/check_cf_proportion.py (fit in-sample: the heads were trained on these cells).
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys
 from pathlib import Path
 import numpy as np, pandas as pd
@@ -20,7 +22,7 @@ HERE = Path(__file__).resolve().parent; sys.path.insert(0, str(HERE.parent)); sy
 import paperstyle as ps
 from fig3_layout import LET
 ps.setup()
-S = Path('/home/yancui/haruka_v2/bench_real_discovery/cc_shift_info')
+S = Path(f'{_HR}/bench_real_discovery/cc_shift_info')
 COL = {'observed': ps.LATENT['space'], 'p_bg': ps.LATENT['z'], 'p_full': ps.LATENT['s']}
 LAB = {'observed': 'Observed', 'p_bg': 'Background p([z,0])', 'p_full': 'Salient p([z,s])'}
 CFG = {'starmap': dict(title='STARmap, 2 AD slices', ref='Control slice', mic='Micro',

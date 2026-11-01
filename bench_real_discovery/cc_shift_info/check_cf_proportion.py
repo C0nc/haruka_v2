@@ -13,13 +13,15 @@ C3 is the background reference-like?  matched on anatomy x own cell type, compar
 C4 plaque: per column, Spearman with log distance within anatomy (observed / p_bg / p_full),
    and the microglia column by distance bin
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import os, sys, json, warnings
 os.environ.setdefault('OPENBLAS_NUM_THREADS', '8')
 import numpy as np, pandas as pd, anndata as ad
 from scipy.spatial import cKDTree
 from scipy.stats import spearmanr
 warnings.filterwarnings('ignore')
-H = '/home/yancui/haruka_v2'; DS = sys.argv[1]; OUT = f'{H}/bench_real_discovery/cc_shift_info'; K = 20
+H = f'{_HR}'; DS = sys.argv[1]; OUT = f'{H}/bench_real_discovery/cc_shift_info'; K = 20
 
 if DS == 'starmap':
     MD = f'{H}/results_real_compgated_lambda10_samplebatch_sepheads/ad/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'

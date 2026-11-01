@@ -11,6 +11,8 @@ Outputs (figures_paper/kras/data/):
   example.npz        one treated section: xy, cell type, MPAS (tumour cells), nodule id + nodule Itgb6-neighbour TE
   umap.npz           treated cells (<= 40k, stratified by cell type): UMAP of z and s, cell type, MPAS (tumour cells)
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import os, json, warnings
 for v in ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS']: os.environ.setdefault(v, '8')
 os.environ.setdefault('NUMPY_MADVISE_HUGEPAGE', '0')
@@ -20,9 +22,9 @@ from scipy.sparse.csgraph import connected_components
 from sklearn.neighbors import radius_neighbors_graph
 from sklearn.preprocessing import StandardScaler
 warnings.filterwarnings('ignore')
-H = Path('/home/yancui/haruka_v2'); OUT = H / 'figures_paper/kras/data'; OUT.mkdir(parents=True, exist_ok=True)
+H = Path(f'{_HR}'); OUT = H / 'figures_paper/kras/data'; OUT.mkdir(parents=True, exist_ok=True)
 MD = H / 'results_kras_te_null/mouselung_kras_xenium_clean_noC3/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
-a = ad.read_h5ad('/home/yancui/mouselung_kras_xenium_clean_noC3.h5ad', backed='r'); o = a.obs
+a = ad.read_h5ad(f'{_HR}/data/mouselung_kras_xenium_clean_noC3.h5ad', backed='r'); o = a.obs
 assert (np.load(MD / 'obs_names.npy', allow_pickle=True).astype(str) == np.asarray(a.obs_names).astype(str)).all()
 types = json.load(open(MD / 'meta.json'))['cell_type_categories']
 TUMOR = ['Tumor_EMT', 'Tumor_epithelial', 'Tumor_epithelial_Itgb6']

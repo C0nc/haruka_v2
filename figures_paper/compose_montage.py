@@ -4,13 +4,15 @@
     python compose_montage.py exercise_blocks | exercise_clock | petracer
 Each row is scaled to the full page width by the summed aspect ratio of its panels.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, glob
 from pathlib import Path
 import numpy as np
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt, matplotlib.image as mi
 
-FP = Path('/home/yancui/haruka_v2/figures_paper')
+FP = Path(f'{_HR}/figures_paper')
 
 
 def rows_montage(rows, out, width, dpi, shrink=(0.98, 0.97)):

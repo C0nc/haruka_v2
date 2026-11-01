@@ -8,9 +8,11 @@ Change: malignant cells inside the tumours beyond the buffer move from halo to d
 trained on them.  Lineage fields (clone, clade, fitness, type, detection_rate, tree) are copied from
 the source h5td for evaluation only; they are not model inputs.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import h5py, numpy as np, pandas as pd, anndata as ad
 SRC = '/home/yancui/Jill/fourteen/petracer_data/M2_tumor_tracing.h5td'
-A = ad.read_h5ad('/home/yancui/haruka_v2/bench_petracer_lineage/reaudit_2026-10-16/petracer_M2-1_tumour_vs_nontumour.h5ad')
+A = ad.read_h5ad(f'{_HR}/bench_petracer_lineage/reaudit_2026-10-16/petracer_M2-1_tumour_vs_nontumour.h5ad')
 BUF = float(A.uns['design']['buffer_um'])
 with h5py.File(SRC, 'r') as h:
     S = ad.io.read_elem(h['obs']); chars = ad.io.read_elem(h['obsm/characters'])

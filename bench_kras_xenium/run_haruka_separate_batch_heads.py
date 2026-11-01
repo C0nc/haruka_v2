@@ -7,6 +7,8 @@ embeddings, so technical effects need not share a geometry across objectives.
 Latent z/s encoders remain batch-blind through decoder-only conditioning.
 """
 from __future__ import annotations
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 
 import json
 import sys
@@ -16,7 +18,7 @@ import torch
 
 torch.set_float32_matmul_precision("high")
 
-BASE_DIR = Path("/home/yancui/haruka_v2/bench_mouse_brain_scviva")
+BASE_DIR = Path(f"{_HR}/bench_mouse_brain_scviva")
 sys.path.insert(0, str(BASE_DIR))
 import run_haruka_shared_decoder as base  # noqa: E402
 

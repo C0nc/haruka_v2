@@ -11,6 +11,8 @@ This is control-anchored (uses the 46,971 untreated tumour cells), direction-awa
 (low MAPK = response, not |shift|), and independent of the Haruka latents.
 """
 from __future__ import annotations
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import argparse, json
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad, scanpy as sc, warnings
@@ -29,9 +31,9 @@ SIGS = {
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument('--data', default='/home/yancui/mouselung_kras_xenium_clean_noC3.h5ad')
+    p.add_argument('--data', default=f'{_HR}/data/mouselung_kras_xenium_clean_noC3.h5ad')
     p.add_argument('--out-dir', type=Path,
-                   default=Path('/home/yancui/haruka_v2/bench_kras_xenium/biological_responder'))
+                   default=Path(f'{_HR}/bench_kras_xenium/biological_responder'))
     p.add_argument('--seed', type=int, default=0)
     args = p.parse_args(); args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -102,9 +104,9 @@ def main() -> None:
         from sklearn.linear_model import LogisticRegression
         from sklearn.metrics import roc_auc_score
         from scipy.stats import fisher_exact
-        CC = ('/home/yancui/haruka_v2/results_real_compgated_nb_final/'
+        CC = (f'{_HR}/results_real_compgated_nb_final/'
               'mouselung_kras_xenium_clean_noC3/haruka_z_s_cellcharter_cc3_condition_only/')
-        mt = pd.read_csv('/home/yancui/haruka_v2/final_results_nb/kras/biology/responder/tables/'
+        mt = pd.read_csv(f'{_HR}/final_results_nb/kras/biology/responder/tables/'
                          'treated_tumor_relative_responder_assignments.csv.gz')
         bio = o.loc[trt_mask].copy(); bio['cid'] = bio.index.astype(str)
         mt['cid'] = mt.cell_id.astype(str)

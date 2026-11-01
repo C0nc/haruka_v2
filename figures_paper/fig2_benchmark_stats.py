@@ -6,14 +6,16 @@ KMeans, k = number of ground-truth classes, seed 0, n_init 20), already verified
 to reproduce the published table exactly for all 35 method x section cells.
 """
 from __future__ import annotations
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 from pathlib import Path
 import numpy as np, pandas as pd
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 
-B = Path('/home/yancui/haruka_v2/bench_mouse_brain_scviva')
-OUT = Path('/home/yancui/haruka_v2/figures_paper')
+B = Path(f'{_HR}/bench_mouse_brain_scviva')
+OUT = Path(f'{_HR}/figures_paper')
 DEFAULT, ABL, BASE = '#0f6e7a', '#8cc3c8', '#a3acb5'
 INK, INK2, MUTED, GRID = '#16202b', '#4d5966', '#8a96a3', '#e4e9ee'
 plt.rcParams.update({'font.family':'DejaVu Sans','font.size':8.6,'axes.edgecolor':MUTED,

@@ -1,0 +1,27 @@
+# Python 3.11 environment used for every fit and figure (conda env `haruka2`); CUDA build of torch as appropriate.
+# After installing, apply the model patch:  bash install_contrastivevi_patch.sh
+scvi-tools==1.4.0.post1
+torch==2.9.1
+anndata==0.12.6
+scanpy==1.11.5
+squidpy==1.6.5
+cellcharter==0.3.5
+liana==1.6.1
+astir==0.1.5
+numpy==2.3.5
+pandas==2.3.3
+scipy==1.16.3
+scikit-learn==1.7.2
+umap-learn==0.5.9.post2
+h5py==3.15.1
+shapely==2.1.2
+threadpoolctl==3.6.0
+tqdm==4.67.1
+matplotlib==3.10.7
+seaborn==0.13.2
+pillow==12.0.0
+huggingface_hub==2.4.0
+ipykernel
+nbformat
+nbconvert
+# Fig. 2 CINEMA-OT baseline runs in a separate env (HARUKA_PY_VIO) with cinemaot installed.

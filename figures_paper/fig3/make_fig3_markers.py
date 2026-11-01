@@ -10,6 +10,8 @@
 Statistics: within-group Pearson (features and proximity centred within donor|slice x type [x domain]);
 held-out z/s plaque scores as in the radial tests. Source: bench_codex_cns_2026/wholeslice/plaque_states/cross_species.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, warnings
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad, scipy.sparse as sp
@@ -23,7 +25,7 @@ warnings.filterwarnings('ignore')
 HERE = Path(__file__).resolve().parent; sys.path.insert(0, str(HERE.parent))
 import paperstyle as ps
 ps.setup()
-H = Path('/home/yancui/haruka_v2'); X = H / 'bench_codex_cns_2026/wholeslice/plaque_states/cross_species'
+H = Path(f'{_HR}'); X = H / 'bench_codex_cns_2026/wholeslice/plaque_states/cross_species'
 DIV = LinearSegmentedColormap.from_list('div', ps.DIVERGING); SEQ = LinearSegmentedColormap.from_list('seq', ps.SEQUENTIAL)
 O = pd.read_csv(X / 'cross_species_orthologs.csv'); rng = np.random.default_rng(0)
 

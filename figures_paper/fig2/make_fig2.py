@@ -17,6 +17,8 @@ k = number of planted classes, random_state 0, n_init 20.  Cached clusterings we
 checked against the published ARIs (max |deviation| 4.4e-4) before caching.
 """
 from __future__ import annotations
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad
@@ -32,7 +34,7 @@ sys.path.insert(0, str(HERE.parent))
 import paperstyle as ps  # noqa: E402
 ps.setup()
 
-ROOT = Path('/home/yancui/haruka_v2')
+ROOT = Path(f'{_HR}')
 DATA = ROOT / 'bench_mouse_brain_scviva/data_composition_pairs_all/mouse_brain_B5_paired.h5ad'
 CACHE = ROOT / 'figures_paper/fig2_maps_cache_B5.npz'
 PERSEC = ROOT / 'figures_paper/fig2_benchmark_per_section.csv'

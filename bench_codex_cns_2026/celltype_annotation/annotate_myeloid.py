@@ -7,9 +7,11 @@ based, never sees the clusters). Macrophage labels are confirmed by both methods
 microglial labels are STATES on a continuum (Astir agrees on ordering, abstains on
 hard calls).
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import numpy as np, pandas as pd, anndata as ad
 from pathlib import Path
-OUT = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/celltype_annotation')
+OUT = Path(f'{_HR}/bench_codex_cns_2026/celltype_annotation')
 
 ANNOT = {  # cluster: (fine label, map category, lineage, defining markers)
  '4':  ('Homeostatic microglia', 'Homeostatic microglia', 'Microglia', 'TMEM119+ MHC-II low'),
@@ -43,7 +45,7 @@ print(T[['cluster', 'label', 'map_category', 'n_cells', 'white_matter_fraction',
 
 lut = {c: v for c, v in ANNOT.items()}
 for stem in ['codex_cns_myeloid_primary_no_aml_no_combat', 'codex_cns_myeloid_primary_no_aml_channelnorm']:
-    a = ad.read_h5ad(f'/home/yancui/haruka_v2/bench_codex_cns_2026/data/processed/{stem}.h5ad', backed='r')
+    a = ad.read_h5ad(f'{_HR}/bench_codex_cns_2026/data/processed/{stem}.h5ad', backed='r')
     cl = a.obs.paper_initial_leiden.astype(str)
     pd.DataFrame({'cell': a.obs_names.astype(str), 'donor_id': a.obs.donor_id.astype(str).to_numpy(),
                   'leiden': cl.to_numpy(), 'myeloid_label': cl.map(lambda x: lut[x][0]).to_numpy(),

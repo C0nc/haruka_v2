@@ -20,6 +20,8 @@ Ccnd1, Epha2); responder = treated tumour cell with MPAS below the control 25th 
 Sources: figures_paper/kras/data/ (kras_fig_data.py) and bench_kras_xenium/nodule_te/ (nodule_te.py, refit runs).
 Caveat (legend): control and treated sections are separate Xenium runs, so arm is confounded with run.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, json, warnings
 import numpy as np, pandas as pd
 from pathlib import Path
@@ -29,9 +31,9 @@ from sklearn.decomposition import PCA
 from scipy.stats import spearmanr
 from PIL import Image
 warnings.filterwarnings('ignore')
-sys.path.insert(0, '/home/yancui/haruka_v2/figures_paper'); import paperstyle as ps
+sys.path.insert(0, f'{_HR}/figures_paper'); import paperstyle as ps
 ps.setup(); MM = ps.MM
-OUT = Path('/home/yancui/haruka_v2/figures_paper/kras'); DAT = OUT / 'data'; NT = Path('/home/yancui/haruka_v2/bench_kras_xenium/nodule_te')
+OUT = Path(f'{_HR}/figures_paper/kras'); DAT = OUT / 'data'; NT = Path(f'{_HR}/bench_kras_xenium/nodule_te')
 CZ, CS = ps.LATENT['z'], ps.LATENT['s']
 TUM = {'Tumor_epithelial': ps.DOMAIN[1], 'Tumor_epithelial_Itgb6': ps.REGION['CC/ACO'], 'Tumor_EMT': ps.REGION['CTX_L1/MEN']}
 TNAME = {'Tumor_epithelial': 'Tumour epithelial', 'Tumor_epithelial_Itgb6': 'Tumour Itgb6+', 'Tumor_EMT': 'Tumour EMT'}
@@ -196,7 +198,7 @@ ax.text(3.1, 0.86, 'z-PC3 (fails)', transform=ax.get_xaxis_transform(), ha='cent
 ax.set_ylabel('held-out section ρ\n(axis fit on other 3)'); ax.set_ylim(-0.75, 1.0)
 ax.set_title('prediction on held-out sections', pad=2); ps.panel_label(ax, 'o', x=-0.42); save(fig, 'kr_o_zpc2_heldout')
 # p tissue: nodules by z-PC2
-ob = ad.read_h5ad('/home/yancui/mouselung_kras_xenium_clean_noC3.h5ad', backed='r').obs
+ob = ad.read_h5ad(f'{_HR}/data/mouselung_kras_xenium_clean_noC3.h5ad', backed='r').obs
 pxy = np.c_[ob.x_centroid.to_numpy(float), ob.y_centroid.to_numpy(float)][F2['ex_cells']]
 fig, ax = tissue('p', f'z-PC2 per nodule ({F2["ex_section"]})', col=CZ)
 ax.scatter(*xy.T, s=0.15, c=ps.NEUTRAL['light'], lw=0, rasterized=True)

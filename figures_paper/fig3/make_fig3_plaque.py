@@ -9,6 +9,8 @@
   f  arm swap: Ctl-3's plaque gradient in z and s when Ctl-3 is reference vs condition arm
   g  features on the part of s's plaque axis that z does not carry (microglia)
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, warnings
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad, scipy.sparse as sp
@@ -21,7 +23,7 @@ warnings.filterwarnings('ignore')
 HERE = Path(__file__).resolve().parent; sys.path.insert(0, str(HERE.parent))
 import paperstyle as ps
 ps.setup()
-H = Path('/home/yancui/haruka_v2')
+H = Path(f'{_HR}')
 CP = H / 'bench_codex_cns_2026/wholeslice/plaque_states'; SP = H / 'bench_real_discovery/starmap_plaque_radial'
 Z, S = ps.LATENT['z'], ps.LATENT['s']
 REPC = {'z': Z, 's': S, 'protein': ps.NEUTRAL['mid'], 'expr HVG500': ps.NEUTRAL['mid'], 'scVI32': ps.NEUTRAL['dark']}

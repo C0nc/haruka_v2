@@ -10,13 +10,15 @@ latents centred within donor|slice x type [x tissue domain for STARmap]:
 Held-out scores = per-type ridge on log distance, donor/slice held out (as in the radial tests).
 Writes marker_axes_<dataset>.csv (all features) for the cross-species comparison.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, warnings
 import numpy as np, pandas as pd, anndata as ad, scipy.sparse as sp
 warnings.filterwarnings('ignore')
 from scipy.stats import spearmanr, rankdata
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import RidgeCV
-H = '/home/yancui/haruka_v2/'
+H = f'{_HR}/'
 D = sys.argv[1]
 
 

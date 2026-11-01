@@ -12,6 +12,8 @@ are spatially clustered, so random splits would reward location.
   T5 within clone 5: lineage character distance vs latent distance (Spearman), and partial on
      spatial distance
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import os, warnings
 os.environ.setdefault('OPENBLAS_NUM_THREADS', '8')
 import numpy as np, pandas as pd, anndata as ad, scipy.sparse as sp
@@ -23,7 +25,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GroupKFold
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 warnings.filterwarnings('ignore')
-D = Path('/home/yancui/haruka_v2/bench_petracer_lineage/m2_lineage')
+D = Path(f'{_HR}/bench_petracer_lineage/m2_lineage')
 MD = D / 'fits/petracer_M2-1_lineage/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
 log = open(D / 'lineage_test.log', 'w')
 def P(*x):

@@ -2,10 +2,13 @@
 """Exercise intervention (Sun et al. aging atlas, MERFISH 300 genes): old control (4 mice) vs old exercise (4 mice).
 Young mice dropped. condition: control / exercise; cell_type = celltype; slice_id = mouse_id (one section per mouse,
 neighbourhoods built within it); run_batch = Xenium/MERFISH run A/B (2 control + 2 exercise each, the batch key)."""
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import numpy as np, pandas as pd, anndata as ad, json
 from scipy import sparse
 SRC = '/home/yancui/virtualorganoid/exercise.h5ad'
-OUT = '/project/zhihuanglab/yancui/haruka_exercise/data/exercise_old_full.h5ad'
+OUT = f'{_HW}/haruka_exercise/data/exercise_old_full.h5ad'
 h = ad.read_h5ad(SRC, backed='r')
 coh = h.obs.cohort.astype(str).to_numpy(); sel = np.flatnonzero(np.isin(coh, ['old_control', 'old_exercise']))
 X = np.empty((len(sel), h.shape[1]), np.float32)

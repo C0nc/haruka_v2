@@ -11,6 +11,8 @@ Grey matter; features centred within donor x cell type; tests within cell type.
   protein   the same tests on the fit's input proteins (the baseline)
 Distance = nearest official Abeta object of either class.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys, warnings
 import numpy as np, pandas as pd, anndata as ad
 warnings.filterwarnings('ignore')
@@ -20,12 +22,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import RidgeCV
 from sklearn.neighbors import NearestNeighbors
 V = sys.argv[1]; PX = 0.3774
-W = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/wholeslice')
+W = Path(f'{_HR}/bench_codex_cns_2026/wholeslice')
 import os
-M = Path(os.environ.get('MODEL_DIR', f'/home/yancui/haruka_v2/results_codex_wholeslice/codex_wholeslice_{V}/'
+M = Path(os.environ.get('MODEL_DIR', f'{_HR}/results_codex_wholeslice/codex_wholeslice_{V}/'
          'haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'))
 TAG = os.environ.get('TAG', '')
-SRC = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/external/CODEX-CNS/codex_notebooks/marker_intensities')
+SRC = Path(f'{_HR}/bench_codex_cns_2026/external/CODEX-CNS/codex_notebooks/marker_intensities')
 FILES = {'AD-1': '11162021_Bahareh-3155_EDTA_abeta.csv', 'AD-2': '10202021_BaharehNP_2997-ADCortex_EDTA_abeta.csv',
          'AD-3': '10122021_BaharehNP_ADCortex_EDTA_abeta.csv', 'AD-4': '12032021-Bahareh_3280_Alz_abeta.csv',
          'Ctl-3': '10122021_BaharehNP_1-CtlCortex1796_EDTA_MKT6_abeta.csv'}

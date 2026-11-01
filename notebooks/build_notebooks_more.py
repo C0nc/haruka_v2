@@ -2,8 +2,7 @@
 NOTEBOOKS = {}
 
 # ---------------------------------------------------------------- exercise
-X = '/project/zhihuanglab/yancui/haruka_exercise'
-FIT_EX = f'{X}/results_w10_s100/exercise_old_full/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
+FIT_EX = f'haruka_exercise/results_w10_s100/exercise_old_full/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
 NOTEBOOKS['04_exercise'] = dict(
     title='Exercise rejuvenation (aged mouse brain MERFISH): s carries the clock shift, z does not',
     intro="""Old control (4 mice) vs old exercise (4 mice), 594,896 cells x 300 genes (Sun et al. aging/exercise atlas).
@@ -15,10 +14,12 @@ vascular cells: VLMC, VSMC, endothelium), z does not (r = -0.17).""",
         ('md', '## 1 Data: keep old control / old exercise mice'),
         ('code', "run(f'{PY} bench_exercise/prepare_exercise.py', 'data')  # /home/yancui/virtualorganoid/exercise.h5ad -> exercise_old_full.h5ad"),
         ('md', '## 2 Fit (default model; batch = run; ~15 min on one GPU)'),
-        ('code', f"""run('bash bench_exercise/run_fit_w10_s100.sh 0', 'fit', log='bench_exercise/logs/fit_w10_s100.log')
-require('{FIT_EX}/background.npy', '{FIT_EX}/salient.npy')"""),
+        ('code', f"""run(f'bash bench_exercise/run_fit_w10_s100.sh {{GPU}}', 'fit', log='bench_exercise/logs/fit_w10_s100.log')
+require(WK / '{FIT_EX}/background.npy', WK / '{FIT_EX}/salient.npy')"""),
         ('md', '## 3 Spatial Aging Clock on observed expression (github sunericd/SpatialAgingClock @ 2b832f4)'),
-        ('code', "run(f'{PY} bench_exercise/run_clock_exercise.py', 'analysis', log='bench_exercise/clock.log')"),
+        ('code', """CLK = 'bench_oskm_reprogramming/external/SpatialAgingClock'
+run(f'[ -d {CLK} ] || (git clone -q https://github.com/sunericd/SpatialAgingClock {CLK} && git -C {CLK} checkout -q 2b832f4)', 'download')
+run(f'{PY} bench_exercise/run_clock_exercise.py', 'analysis', log='bench_exercise/clock.log')"""),
         ('md', """## 4 Held-out clock prediction from z and s; within-vascular partition; panels
 `make_exercise_clock_shift.py` reuses `oof_clock_predictions_w10_s100.csv.gz` if present: move it away for a true rerun."""),
         ('code', """E = H / 'figures_paper/exercise'
@@ -53,7 +54,7 @@ Held-out clone classification (multinomial logistic, GroupKFold over 150 um spat
         ('code', f"""run(f'{{PY}} {P}/reaudit_2026-10-16/build_m2_tumour_vs_normal.py', 'data', log='{P}/reaudit_2026-10-16/build_m2.log')
 run(f'{{PY}} build_m2_lineage.py', 'data', cwd=H / '{P}/m2_lineage')"""),
         ('md', '## 2 Haruka fit (~5 min) and the scVI baseline (~20 min)'),
-        ('code', f"""run('bash run_fit.sh 0', 'fit', cwd=H / '{P}/m2_lineage', log='fit.log')
+        ('code', f"""run(f'bash run_fit.sh {{GPU}}', 'fit', cwd=H / '{P}/m2_lineage', log='fit.log')
 run(f'{{PY}} fit_scvi.py', 'fit', cwd=H / '{P}/m2_lineage', log='scvi.log')"""),
         ('md', '## 3 Lineage tests T1-T5 (z vs s vs scVI)'),
         ('code', f"""run(f'{{PY}} {P}/m2_lineage/lineage_test.py', 'analysis', log='{P}/m2_lineage/lineage_test.out')
@@ -100,7 +101,7 @@ run(f'{PY} summarize_composition_gated_lambda_sweep.py --base . --lambdas 10 25 
     d = f'data_composition_pairs_all/mouse_brain_{s}_paired.h5ad'; root = 'results_direct_kmeans' if s == 'A8' else 'results_cross_section'
     run(f'{PY} {H}/bench_merfish/run_baselines_2x2.py --data {d} --methods pca cellcharter contrastivevi --out_root {root}/baselines --seed 0 --max_epochs 150 --batch_size 2048', 'fit', cwd=B)
     cine = f'{root}/cinema_minibatch/mouse_brain_{s}_paired/cinemaot_minibatch_b2048_e3_seed0'
-    run(f'/home/yancui/.conda/envs/vio/bin/python {H}/bench_merfish/run_cinemaot_minibatch.py --data {d} --out_root {root}/cinema_minibatch --seed 0 --dim 20 --thres 0.15 --transport_batch_size 2048 --n_ensembles 3', 'fit', cwd=B)
+    run(f'{PY_VIO} {H}/bench_merfish/run_cinemaot_minibatch.py --data {d} --out_root {root}/cinema_minibatch --seed 0 --dim 20 --thres 0.15 --transport_batch_size 2048 --n_ensembles 3', 'fit', cwd=B)
     run(f'{PY} {H}/bench_merfish/cc_add_spatial.py --data {d} --result_dir {cine}', 'analysis', cwd=B)
     run(f'{PY} score_composition_controls.py --data {d} --out {root}/composition_controls_{s}.json --k_niche 20 --seed 0 --n_init 20', 'analysis', cwd=B)
     run(f'for e in {root}/baselines/mouse_brain_{s}_paired/*/ {cine}; do {PY} score_pair_direct_kmeans.py --data {d} --emb_dir $e; done', 'analysis', cwd=B)
@@ -139,10 +140,10 @@ run(f'{PY} build_ctl3_vs_ctl14.py', 'data', cwd=W)                              
         ('code', f"""run(f'{{PY}} bench_kras_xenium/run_haruka_separate_batch_heads.py --data bench_real_discovery/data/ad.h5ad --batch_size 4096 --sample_key slice_id --batch_key slice_id --condition_key condition --target_label disease --cell_type_key cell_type --gene_likelihood normal --neighbor_input_mode pretransformed --assay_type sequencing --n_top_genes 0 --out_root {SEP} --seed 0 --max_epochs 150 --n_latent 32 --n_hidden 256 --n_layers 1 --decoder_layers 2 --k_niche 20 --neighbor_embedding_dim 16 --composition_loss_weight 1 --neighbor_mean_loss_weight 1 --neighbor_expression_mode composition_gated --spatial_weight 100 --background_wasserstein_penalty 0 --zs_independence_penalty 10 --decoder_batch_dim 8 --batch_injection_mode decoder_only --augmentation_mode sparse --num_workers 4 --direct_only', 'fit')
 run(f'{{PY}} bench_kras_xenium/rebuild_condition_only_salient_cc.py --data bench_real_discovery/data/ad.h5ad --input-dir {SEP}/ad/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0 --output-dir {SEP}/ad/haruka_z_s_cellcharter_cc3_condition_only --condition-key condition --condition-value disease --slice-key slice_id', 'analysis')
 for v in ['all7_no_oligo', 'ctl3VsCtl14']:
-    run(f'bash run_wholeslice_fit.sh {{v}} 0', 'fit', cwd=W)
+    run(f'bash run_wholeslice_fit.sh {{v}} {{GPU}}', 'fit', cwd=W)
 for ds in ['starmap', 'codex']:
     for seed in [1, 2]:
-        run(f'bash results_seedcheck/run_seed.sh {{ds}} {{seed}} 0', 'fit')"""),
+        run(f'bash results_seedcheck/run_seed.sh {{ds}} {{seed}} {{GPU}}', 'fit')"""),
         ('md', '## 3 Plaque distances (model-independent) and CODEX radial / null analyses'),
         ('code', """# STARmap plaque distances: ad_analysis/plot_plaque_distance_spatial.py -> final_results_nb/starmap_ad/biology/plaque_distance/starmap_plaque_distance_cells.csv.gz
 require(H / 'final_results_nb/starmap_ad/biology/plaque_distance/starmap_plaque_distance_cells.csv.gz')

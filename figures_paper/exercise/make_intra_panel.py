@@ -2,9 +2,11 @@
 """Panel m: within each vascular type, share of the exercise-cell rejuvenation readout explained by
 mouse (section), brain region (within mouse) and local cell-type proportions (held-out-mouse R^2, floored at 0);
 observed clock vs held-out prediction from z and from s. Source: intra_vascular_partition.csv."""
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import sys; import numpy as np, pandas as pd
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-sys.path.insert(0, '/home/yancui/haruka_v2/figures_paper'); import paperstyle as ps
+sys.path.insert(0, f'{_HR}/figures_paper'); import paperstyle as ps
 ps.setup()
 T = pd.read_csv('intra_vascular_partition.csv'); T = T[T.cell_type != 'all vascular']
 types = ['Endothelial', 'Pericyte', 'VLMC', 'VSMC']; reads = ['observed', 'z', 's']

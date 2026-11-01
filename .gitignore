@@ -18,3 +18,5 @@ __pycache__/
 notebooks/logs/
 *.orig
 *.rej
+hf_data/
+work/

@@ -3,6 +3,8 @@
 Features centred within slice x fine type x tissue domain (anatomy controlled).  Cross-slice
 ridge decoding (train r1 -> test r2 and back), Spearman.  Shifted null: the Abeta-associated
 cell positions translated by a random offset (toroidal wrap in the slice bounding box)."""
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import warnings
 import numpy as np, pandas as pd, anndata as ad, scipy.sparse as sp
 warnings.filterwarnings('ignore')
@@ -11,10 +13,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import RidgeCV
 from sklearn.neighbors import NearestNeighbors
 import os
-MD = os.environ.get('MODEL_DIR', '/home/yancui/haruka_v2/results_real_compgated_lambda10_samplebatch_sepheads/ad/'
+MD = os.environ.get('MODEL_DIR', f'{_HR}/results_real_compgated_lambda10_samplebatch_sepheads/ad/'
       'haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0')
 NSHIFT = int(os.environ.get('NSHIFT', '5')); TAG = os.environ.get('TAG', '')
-a = ad.read_h5ad('/home/yancui/haruka_v2/bench_real_discovery/data/ad.h5ad'); o = a.obs
+a = ad.read_h5ad(f'{_HR}/bench_real_discovery/data/ad.h5ad'); o = a.obs
 CROSS = {'CTX-Ex': 'Neuron', 'CA1': 'Neuron', 'CA2': 'Neuron', 'CA3': 'Neuron', 'DG': 'Neuron', 'Inh': 'Neuron', 'LHb': 'Neuron',
          'Astro': 'Astrocyte', 'Oligo': 'Oligodendrocyte', 'OPC': 'Oligodendrocyte', 'Micro': 'Microglia', 'Endo': 'Vascular', 'SMC': 'Vascular'}
 fine = o.ct_top.astype(str).to_numpy(); major = pd.Series(fine).map(CROSS).to_numpy()

@@ -2,7 +2,8 @@
 """Generate the reproduction notebooks (one per paper figure) from the step lists below.
 
 Each notebook: what the figure claims, the default Haruka fit, then every step as a `run(cmd, stage)` cell
-(stages: data, fit, analysis, figure), and finally the figure itself. Regenerate with
+(stages: download, data, fit, analysis, figure), and finally the figure itself. Inputs come from the Hugging Face
+dataset (section 0), so a notebook runs end to end on a fresh clone. Regenerate with
     python notebooks/build_notebooks.py
 """
 import nbformat as nbf
@@ -17,12 +18,12 @@ DEFAULT_ARGS = """--seed 0 --max_epochs 150 \\
   --background_wasserstein_penalty 0 --zs_independence_penalty 10 --decoder_batch_dim 8 --batch_injection_mode decoder_only \\
   --augmentation_mode sparse --num_workers 4 --direct_only"""
 
-HEADER = """import sys; sys.path.insert(0, '/home/yancui/haruka_v2/notebooks')
-from repro import run, require, show, STAGES, H, PY
-# Default: figure stage only (redraw from saved analysis outputs). Turn on earlier stages to rerun them.
-# Fresh machine: STAGES.update(download=True) fetches the preprocessed inputs (section 0), then fit=True, analysis=True.
-# STAGES.update(download=True, fit=True, analysis=True)
-print(STAGES)"""
+HEADER = """import sys, pathlib; sys.path.insert(0, str(next(p for p in [pathlib.Path.cwd(), pathlib.Path.cwd() / 'notebooks'] if (p / 'repro.py').exists())))
+from repro import run, require, show, fetch, STAGES, H, WK, PY, PY_VIO, GPU
+# Default: end to end (download from Hugging Face -> fit -> analyses -> figure; hours on one GPU).
+# Redraw only from saved outputs: STAGES.update(download=False, fit=False, analysis=False)  (or env HARUKA_FIGURE_ONLY=1)
+# Rebuild the inputs from the raw public releases instead of Hugging Face: STAGES.update(data=True)
+print(H, STAGES)"""
 
 
 def md(s): return nbf.v4.new_markdown_cell(s.strip())
@@ -33,12 +34,10 @@ def notebook(name, title, intro, steps, figures):
     nb = nbf.v4.new_notebook(); nb.metadata['kernelspec'] = KERNEL
     cells = [md(f'# {title}\n\n{intro}'), code(HEADER)]
     if name in HF_FILES:
-        cells.append(md('## 0 Preprocessed data (Hugging Face)\n\nSkip the data stage: download the ready-to-fit inputs from '
-                        f'[{HF_REPO}](https://huggingface.co/datasets/{HF_REPO}) and link them to the paths the scripts expect.'))
-        lines = [f"# {HF_REPO}/{f}  ->  {dst}" for f, dst in HF_FILES[name]]
-        cells.append(code('\n'.join(lines) + '\nDL = H / "hf_data"\n' + '\n'.join(
-            f"run(f'hf download {HF_REPO} {f} --repo-type dataset --local-dir {{DL}} && mkdir -p $(dirname {dst}) && ln -sfn {{DL}}/{f} {dst}', 'download')"
-            for f, dst in HF_FILES[name])))
+        cells.append(md('## 0 Preprocessed data (Hugging Face)\n\nThe ready-to-fit inputs are read directly from '
+                        f'[{HF_REPO}](https://huggingface.co/datasets/{HF_REPO}) (cached in `hf_data/`) and linked to the '
+                        'paths the scripts read. The data stage below rebuilds the same files from the raw releases and is off by default.'))
+        cells.append(code('\n'.join(f"fetch('{f}', {dst})" for f, dst in HF_FILES[name])))
     for kind, text in steps:
         cells.append(md(text) if kind == 'md' else code(text))
     cells.append(md('## Figure'))
@@ -49,17 +48,17 @@ def notebook(name, title, intro, steps, figures):
 
 
 HF_REPO = 'C1vy/haruka_v2_data'
-_FIG2 = [(f'02_fig2_benchmark/mouse_brain_{s}_paired.h5ad', f'bench_mouse_brain_scviva/data_composition_pairs_all/mouse_brain_{s}_paired.h5ad') for s in ['A8', 'A9', 'B17', 'B3', 'B5']]
+_FIG2 = [(f'02_fig2_benchmark/mouse_brain_{s}_paired.h5ad', f"H / 'bench_mouse_brain_scviva/data_composition_pairs_all/mouse_brain_{s}_paired.h5ad'") for s in ['A8', 'A9', 'B17', 'B3', 'B5']]
 HF_FILES = {
     '02_fig2_benchmark': _FIG2,
-    '03_fig3_ad_plaque': [('03_fig3_ad_plaque/ad_starmap.h5ad', 'bench_real_discovery/data/ad.h5ad'),
-                          ('03_fig3_ad_plaque/codex_wholeslice_all7_no_oligo.h5ad', 'bench_codex_cns_2026/wholeslice/codex_wholeslice_all7_no_oligo.h5ad'),
-                          ('03_fig3_ad_plaque/codex_wholeslice_ctl3VsCtl14.h5ad', 'bench_codex_cns_2026/wholeslice/codex_wholeslice_ctl3VsCtl14.h5ad')],
-    '04_exercise': [('04_exercise/exercise_old_full.h5ad', '/project/zhihuanglab/yancui/haruka_exercise/data/exercise_old_full.h5ad')],
-    '05_petracer': [('05_petracer/petracer_M2-1_lineage.h5ad', 'bench_petracer_lineage/m2_lineage/petracer_M2-1_lineage.h5ad')],
-    '06_fibrosis': [('06_fibrosis/gse250346_unaffected_vs_all_fibrosis.h5ad', 'bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad'),
-                    ('06_fibrosis/he_annot_matched.csv.gz', '/project/zhihuanglab/yancui/haruka_fibrosis_he/he_annot_matched.csv.gz')],
-    '07_kras': [('07_kras/mouselung_kras_xenium_clean_noC3.h5ad', '/home/yancui/mouselung_kras_xenium_clean_noC3.h5ad')],
+    '03_fig3_ad_plaque': [('03_fig3_ad_plaque/ad_starmap.h5ad', "H / 'bench_real_discovery/data/ad.h5ad'"),
+                          ('03_fig3_ad_plaque/codex_wholeslice_all7_no_oligo.h5ad', "H / 'bench_codex_cns_2026/wholeslice/codex_wholeslice_all7_no_oligo.h5ad'"),
+                          ('03_fig3_ad_plaque/codex_wholeslice_ctl3VsCtl14.h5ad', "H / 'bench_codex_cns_2026/wholeslice/codex_wholeslice_ctl3VsCtl14.h5ad'")],
+    '04_exercise': [('04_exercise/exercise_old_full.h5ad', "WK / 'haruka_exercise/data/exercise_old_full.h5ad'")],
+    '05_petracer': [('05_petracer/petracer_M2-1_lineage.h5ad', "H / 'bench_petracer_lineage/m2_lineage/petracer_M2-1_lineage.h5ad'")],
+    '06_fibrosis': [('06_fibrosis/gse250346_unaffected_vs_all_fibrosis.h5ad', "H / 'bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad'"),
+                    ('06_fibrosis/he_annot_matched.csv.gz', "WK / 'haruka_fibrosis_he/he_annot_matched.csv.gz'")],
+    '07_kras': [('07_kras/mouselung_kras_xenium_clean_noC3.h5ad', "H / 'data/mouselung_kras_xenium_clean_noC3.h5ad'")],
 }
 
 NOTEBOOKS = {}
@@ -81,6 +80,21 @@ NOTEBOOKS['00_default_model'] = dict(
   composition and neighbour-mean heads. z and s encoders are batch-blind.
 * **Training**: 150 epochs, 32-d latents, sparse augmentation.""",
     steps=[
+        ('md', """## Setup (once per machine)
+
+```bash
+git clone -b v2 https://github.com/C0nc/haruka_v2 && cd haruka_v2
+conda create -n haruka2 python=3.11 -y && conda activate haruka2
+pip install -r requirements.txt
+bash install_contrastivevi_patch.sh            # the Haruka model: patched scvi ContrastiveVI module
+python -m ipykernel install --user --name haruka2
+```
+Then open any notebook: section 0 downloads its inputs from Hugging Face and the notebook runs end to end.
+The check below confirms the installed scvi carries the patch."""),
+        ('code', """import os, filecmp, scvi
+dst = os.path.join(os.path.dirname(scvi.__file__), 'external', 'contrastivevi')
+bad = [f for f in os.listdir(H / 'contrastivevi_patch') if f.endswith('.py') and not filecmp.cmp(H / 'contrastivevi_patch' / f, os.path.join(dst, f), shallow=False)]
+print('scvi', scvi.__version__, '| patch installed' if not bad else f'| NOT patched: {bad} -> run install_contrastivevi_patch.sh')"""),
         ('md', '## Default arguments (shared by all fits)'),
         ('code', f'DEFAULT = """{DEFAULT_ARGS}"""\nprint(DEFAULT)'),
         ('md', """## Per-dataset arguments
@@ -124,15 +138,15 @@ Disease stage (Less vs More Affected) is carried by z, not s.""",
     steps=[
         ('md', '## 1 Data: download, export from the Seurat RDS (R), build the h5ad'),
         ('code', f"""run(f'wget -c -O {FIB}/data/GSE250346_corrected.rds https://ftp.ncbi.nlm.nih.gov/geo/series/GSE250nnn/GSE250346/suppl/GSE250346_Seurat_GSE250346_CORRECTED_SEE_RDS_README_082024.rds', 'data')
-run(f'/home/yancui/.conda/envs/milabo/bin/Rscript {FIB}/export_gse250346_unaffected_vs_fibrosis.R {FIB}/data/GSE250346_corrected.rds {FIB}/data/export_unaffected_vs_fibrosis', 'data')
+run(f'Rscript {FIB}/export_gse250346_unaffected_vs_fibrosis.R {FIB}/data/GSE250346_corrected.rds {FIB}/data/export_unaffected_vs_fibrosis', 'data')
 run(f'{{PY}} {FIB}/build_h5ad.py --export-dir {FIB}/data/export_unaffected_vs_fibrosis --out {FIB}/data/gse250346_unaffected_vs_all_fibrosis.h5ad --contrast unaffected-vs-fibrosis', 'data')"""),
         ('md', '## 2 H&E annotations (GEO supplementary) matched to cells by barcode + centroid'),
-        ('code', """HE = '/project/zhihuanglab/yancui/haruka_fibrosis_he'
+        ('code', """HE = WK / 'haruka_fibrosis_he'
 run(f'mkdir -p {HE}/raw {HE}/x && cd {HE}/raw && curl -sSLO https://ftp.ncbi.nlm.nih.gov/geo/series/GSE250nnn/GSE250346/suppl/GSE250346_HE_annotations.tar.gz && tar -xzf GSE250346_HE_annotations.tar.gz -C ../x', 'data')
 run(f'{PY} bench_lung_fibrosis_gse250346/match_he_annotations.py', 'data')"""),
         ('md', '## 3 Fit (default model; batch = core; ~6.8 h on one GPU)'),
         ('code', "run('bash bench_real_discovery/run_all_compgated_samplebatch_sepheads.sh large_lung', 'fit')"),
-        ('code', f"require(H / '{FIT_FIB}/background.npy', H / '{FIT_FIB}/salient.npy', '/project/zhihuanglab/yancui/haruka_fibrosis_he/he_annot_matched.csv.gz')"),
+        ('code', f"require(H / '{FIT_FIB}/background.npy', H / '{FIT_FIB}/salient.npy', WK / 'haruka_fibrosis_he/he_annot_matched.csv.gz')"),
         ('md', """## 4 Analyses (`zs_stage/`)
 * `he_region_zs.py`: per H&E region pair, separability by z vs s (panel e)
 * `he_region_spatial.py`: the same against a spatial-shift null (panel f)
@@ -170,10 +184,10 @@ alveolar macrophages vs airway-adjacent ciliated/SMC) predicts the bad TE on hel
 responders −0.39) and exists before treatment (control SD ratio 0.94). Interactions: squidpy neighbourhood
 enrichment and LIANA+ (lipid exchange Lpl–Sdc1, Apob–Lrp1 at the bad end; complement C3 at the good end).""",
     steps=[
-        ('md', '## 1 Data: the KRAS Xenium h5ad is distributed as-is (X = normalize+log1p, raw counts in `layers[\"counts\"]`); see section 0'),
-        ('code', """run('hf download C1vy/haruka_v2_data 07_kras/mouselung_kras_xenium_clean_noC3.h5ad --repo-type dataset --local-dir /home/yancui/hf_data && ln -sfn /home/yancui/hf_data/07_kras/mouselung_kras_xenium_clean_noC3.h5ad /home/yancui/mouselung_kras_xenium_clean_noC3.h5ad && sha256sum /home/yancui/mouselung_kras_xenium_clean_noC3.h5ad  # expect bd191fd8...166b9f', 'data')"""),
+        ('md', '## 1 Data: the KRAS Xenium h5ad is distributed as-is (X = normalize+log1p, raw counts in `layers[\"counts\"]`), fetched in section 0'),
+        ('code', "require(H / 'data/mouselung_kras_xenium_clean_noC3.h5ad')"),
         ('md', '## 2 Fit (default model; batch = slice, 2000 HVG, saves the model + 3 shuffled-s nulls; ~2.8 h on one GPU)'),
-        ('code', f"""run('mkdir -p results_kras_te_null && bash {KR}/run_kras_te_null_fit.sh 0', 'fit', log='results_kras_te_null/fit.log')
+        ('code', f"""run(f'mkdir -p results_kras_te_null && bash {KR}/run_kras_te_null_fit.sh {{GPU}}', 'fit', log='results_kras_te_null/fit.log')
 require(H / '{FIT_KR}/salient_composition_shift.npy', H / '{FIT_KR}/null_shuffled_s_composition_shift_2.npy')"""),
         ('md', '## 3 Independent biological responder (MAPK MPAS, lower quartile of control per tumour subtype)'),
         ('code', f"run(f'{{PY}} {KR}/define_biological_responder.py', 'analysis', log='{KR}/bio_responder.log')"),

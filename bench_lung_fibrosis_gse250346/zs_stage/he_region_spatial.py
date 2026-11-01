@@ -11,6 +11,9 @@ Per pair x cell type, within each core: region mean difference (R1 - R2) of each
   auc_shift   = held-out-donor within-core AUROC of a logistic on the 47-d salient shift (core-centred), as in A
 Then: does s's AUROC gain over z track align_shift across pair x cell type?
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import os, warnings, json
 for v in ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS']: os.environ.setdefault(v, '8')
 os.environ.setdefault('NUMPY_MADVISE_HUGEPAGE', '0')
@@ -23,14 +26,14 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GroupKFold
 from sklearn.metrics import roc_auc_score
 warnings.filterwarnings('ignore')
-H = Path('/home/yancui/haruka_v2'); OUT = H / 'bench_lung_fibrosis_gse250346/zs_stage/he_region'
+H = Path(f'{_HR}'); OUT = H / 'bench_lung_fibrosis_gse250346/zs_stage/he_region'
 MD = H / 'results_real_compgated_nb_final/gse250346_unaffected_vs_all_fibrosis/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0'
 a = ad.read_h5ad(H / 'bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad', backed='r'); o = a.obs
 types = json.load(open(MD / 'meta.json'))['cell_type_categories']
 pos = pd.Series(np.arange(len(o)), index=o.index)
 BG = np.load(MD / 'background_composition.npy', mmap_mode='r'); CO = np.load(MD / 'condition_composition.npy', mmap_mode='r')
 SH = np.load(MD / 'salient_composition_shift.npy', mmap_mode='r')
-d = pd.read_csv('/project/zhihuanglab/yancui/haruka_fibrosis_he/he_annot_matched.csv.gz', usecols=['obs', 'annotation_type', 'stage', 'core'])
+d = pd.read_csv(f'{_HW}/haruka_fibrosis_he/he_annot_matched.csv.gz', usecols=['obs', 'annotation_type', 'stage', 'core'])
 d = d[d.stage != 'Unaffected'].drop_duplicates(['obs', 'annotation_type'])
 d['i'] = pos.reindex(d.obs).to_numpy(); d['ct'] = o.cell_type.astype(str).to_numpy()[d.i]; d['donor'] = o.donor.astype(str).to_numpy()[d.i]
 log = open(OUT / 'he_region_spatial.log', 'w')

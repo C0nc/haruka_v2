@@ -11,12 +11,15 @@ Download:
   curl -sSLO https://ftp.ncbi.nlm.nih.gov/geo/series/GSE250nnn/GSE250346/suppl/GSE250346_HE_annotations.tar.gz
   tar -xzf GSE250346_HE_annotations.tar.gz -C ../x
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
+_HW = _os.environ.get('HARUKA_WORK') or ('/project/zhihuanglab/yancui' if _os.path.isdir('/project/zhihuanglab/yancui') else _HR + '/work')
 import os
 os.environ.setdefault('NUMPY_MADVISE_HUGEPAGE', '0')
 import anndata as ad, pandas as pd, numpy as np
 
-H = '/home/yancui/haruka_v2'
-HE = os.environ.get('HE_DIR', '/project/zhihuanglab/yancui/haruka_fibrosis_he')
+H = f'{_HR}'
+HE = os.environ.get('HE_DIR', f'{_HW}/haruka_fibrosis_he')
 o = ad.read_h5ad(f'{H}/bench_lung_fibrosis_gse250346/data/gse250346_unaffected_vs_all_fibrosis.h5ad', backed='r').obs
 d = pd.read_csv(f'{HE}/x/GSE250346_HE_annotations/cells_partitioned_by_annotation.csv')
 bc = pd.Series(o.index.str.split('_', n=1).str[1], index=o.index)

@@ -11,6 +11,8 @@ C LIANA+ rank_aggregate (resource 'mouseconsensus', expr_prop 0.1, X = normalize
   Ciliated; magnitude_rank compared high vs low.
 D two example nodules (highest and lowest z-PC2 in the largest section) for zoomed maps.
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import os, json, warnings
 for v in ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS']: os.environ.setdefault(v, '8')
 os.environ.setdefault('NUMPY_MADVISE_HUGEPAGE', '0')
@@ -21,8 +23,8 @@ from scipy.spatial import cKDTree
 from scipy.stats import mannwhitneyu
 from sklearn.neighbors import radius_neighbors_graph
 warnings.filterwarnings('ignore')
-H = Path('/home/yancui/haruka_v2'); OUT = H / 'bench_kras_xenium/nodule_te/zpc2_interactions'; OUT.mkdir(exist_ok=True)
-a = ad.read_h5ad('/home/yancui/mouselung_kras_xenium_clean_noC3.h5ad', backed='r'); o = a.obs
+H = Path(f'{_HR}'); OUT = H / 'bench_kras_xenium/nodule_te/zpc2_interactions'; OUT.mkdir(exist_ok=True)
+a = ad.read_h5ad(f'{_HR}/data/mouselung_kras_xenium_clean_noC3.h5ad', backed='r'); o = a.obs
 TUMOR = ['Tumor_EMT', 'Tumor_epithelial', 'Tumor_epithelial_Itgb6']
 ct = o.celltype.astype(str).to_numpy(); sl = o.slice_id.astype(str).to_numpy(); treated = (o.condition_label.astype(str) == 'KRASi_treated').to_numpy()
 xy = np.c_[o.x_centroid.to_numpy(float), o.y_centroid.to_numpy(float)]; tum = np.isin(ct, TUMOR)

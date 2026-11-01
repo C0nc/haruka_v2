@@ -9,6 +9,8 @@ Unit = tumour nodule: connected component of tumour cells (radius graph R_UM wit
   Step 3 (preliminary, no null yet)  leave-section-out ridge: nodule TE from baseline z, from p_bg, vs from s (ceiling).
 usage: nodule_te.py <model_dir> <tag> [null_shift.npy ...]
 """
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import os, sys, json, warnings
 os.environ.setdefault('OPENBLAS_NUM_THREADS', '8'); os.environ.setdefault('OMP_NUM_THREADS', '8')
 import numpy as np, pandas as pd, anndata as ad
@@ -20,7 +22,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import RidgeCV
 from sklearn.preprocessing import StandardScaler
 warnings.filterwarnings('ignore')
-H = Path('/home/yancui/haruka_v2'); OUT = H / 'bench_kras_xenium/nodule_te'
+H = Path(f'{_HR}'); OUT = H / 'bench_kras_xenium/nodule_te'
 MD = Path(sys.argv[1]); TAG = sys.argv[2]; NULLS = sys.argv[3:]
 R_UM, MIN_CELLS, K = 25.0, 50, 20
 OWN = os.environ.get('OWN_TYPE')  # if set: nodule summaries use only tumour cells of this type (removes own-type mix)
@@ -29,7 +31,7 @@ log = open(OUT / f'nodule_te_{TAG}.log', 'w')
 def P(*x):
     s = ' '.join(str(v) for v in x); print(s, flush=True); log.write(s + '\n'); log.flush()
 
-a = ad.read_h5ad('/home/yancui/mouselung_kras_xenium_clean_noC3.h5ad', backed='r'); o = a.obs
+a = ad.read_h5ad(f'{_HR}/data/mouselung_kras_xenium_clean_noC3.h5ad', backed='r'); o = a.obs
 names = np.load(MD / 'obs_names.npy', allow_pickle=True).astype(str)
 assert (names == np.asarray(a.obs_names).astype(str)).all()
 types = json.load(open(MD / 'meta.json'))['cell_type_categories']

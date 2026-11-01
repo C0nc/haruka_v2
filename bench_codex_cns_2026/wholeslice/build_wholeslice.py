@@ -18,6 +18,8 @@ Two outputs, because Olig2 was segmented in only 3 donors:
   full3           AD-1, AD-4, Ctl-1 with all four lineages
 """
 from __future__ import annotations
+import os as _os, pathlib as _pl
+_HR = _os.environ.get('HARUKA_ROOT') or str(next(p for p in _pl.Path(__file__).resolve().parents if (p / 'notebooks' / 'repro.py').exists()))
 import json
 from pathlib import Path
 import numpy as np, pandas as pd, anndata as ad
@@ -26,7 +28,7 @@ from shapely.geometry import shape
 from sklearn.neighbors import NearestNeighbors
 from load_lineages import load, SHARED, READOUT, SRC
 
-OUT = Path('/home/yancui/haruka_v2/bench_codex_cns_2026/wholeslice')
+OUT = Path(f'{_HR}/bench_codex_cns_2026/wholeslice')
 PX_UM = 0.3774
 DEDUP_PX = 3.0
 MASK_MARKER = {'Myeloid': 'IBA1', 'Astrocyte': 'GFAP', 'Neuron': 'NeuN'}   # Olig2 not in shared panel
@@ -110,11 +112,11 @@ def add_myeloid_states(A):
     """
     from sklearn.ensemble import HistGradientBoostingClassifier
     from sklearn.metrics import accuracy_score, balanced_accuracy_score
-    src = ad.read_h5ad('/home/yancui/haruka_v2/bench_codex_cns_2026/data/processed/'
+    src = ad.read_h5ad(f'{_HR}/bench_codex_cns_2026/data/processed/'
                        'codex_cns_myeloid_primary_no_aml_no_combat.h5ad', backed='r')
     so = src.obs[['donor_id', 'spatial_X', 'spatial_Y', 'paper_initial_leiden']].copy(); src.file.close()
     so['donor_id'] = so.donor_id.astype(str)
-    ann = pd.read_csv('/home/yancui/haruka_v2/bench_codex_cns_2026/celltype_annotation/myeloid_annotation_table.csv',
+    ann = pd.read_csv(f'{_HR}/bench_codex_cns_2026/celltype_annotation/myeloid_annotation_table.csv',
                       dtype={'cluster': str}).set_index('cluster')
     my = np.where((A.lineage_mask == 'Myeloid').to_numpy())[0]
     don = A.donor_id.to_numpy()[my]
