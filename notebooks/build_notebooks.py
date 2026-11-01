@@ -19,9 +19,10 @@ DEFAULT_ARGS = """--seed 0 --max_epochs 150 \\
   --augmentation_mode sparse --num_workers 4 --direct_only"""
 
 HEADER = """import sys, pathlib; sys.path.insert(0, str(next(p for p in [pathlib.Path.cwd(), pathlib.Path.cwd() / 'notebooks'] if (p / 'repro.py').exists())))
-from repro import run, require, show, fetch, fetch_fitted, STAGES, H, WK, PY, PY_VIO, GPU
+from repro import run, require, show, fetch, fetch_fitted, fetch_baselines, STAGES, H, WK, PY, PY_VIO, GPU
 # Default: download inputs + the paper's fitted Haruka outputs from Hugging Face, then analyses -> figure.
-# The Haruka fit step reuses the unpacked fit; HARUKA_REFIT=1 (env) refits from scratch. Auxiliary fits (baselines, seeds) still run.
+# The Haruka fit step reuses the unpacked fit; HARUKA_REFIT=1 (env) refits from scratch. Other Haruka fits (ablations,
+# extra seeds) run. Baseline methods are not refitted: their saved results are downloaded (RUN_BASELINE=1 refits them).
 # Redraw only from saved outputs: STAGES.update(download=False, fit=False, analysis=False)  (or env HARUKA_FIGURE_ONLY=1)
 # Rebuild the inputs from the raw public releases instead of Hugging Face: STAGES.update(data=True)
 print(H, STAGES)"""
@@ -43,6 +44,10 @@ def notebook(name, title, intro, steps, figures):
                         'see the dataset card). It is unpacked into the fit folder, so the fit step below reuses it. '
                         'Set `HARUKA_REFIT=1` before launching to refit instead.'))
         cells.append(code('\n'.join(f"fetch_fitted('{f}', {dst})" for f, dst in HF_FITTED[name])))
+        if name in ('02_fig2_benchmark', '03_fig3_ad_plaque', '05_petracer'):
+            cells.append(md('Saved results of the comparison methods (scVI, ContrastiveVI, expression, CINEMA-OT), so only the '
+                            'Haruka results are recomputed. `RUN_BASELINE=1` refits the baselines instead.'))
+            cells.append(code(f"fetch_baselines('baselines/{name}_baselines.tar.gz')"))
     for kind, text in steps:
         cells.append(md(text) if kind == 'md' else code(text))
     cells.append(md('## Figure'))

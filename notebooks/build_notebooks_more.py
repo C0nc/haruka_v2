@@ -53,9 +53,9 @@ Held-out clone classification (multinomial logistic, GroupKFold over 150 um spat
         ('md', '## 1 Data: tumour vs non-tumour design from the PEtracer release, then the lineage design'),
         ('code', f"""run(f'{{PY}} {P}/reaudit_2026-10-16/build_m2_tumour_vs_normal.py', 'data', log='{P}/reaudit_2026-10-16/build_m2.log')
 run(f'{{PY}} build_m2_lineage.py', 'data', cwd=H / '{P}/m2_lineage')"""),
-        ('md', '## 2 Haruka fit (~5 min) and the scVI baseline (~20 min)'),
+        ('md', '## 2 Haruka fit (~5 min); the scVI baseline (~20 min) is the `baseline` stage (off: its saved latent is downloaded in section 0)'),
         ('code', f"""run(f'bash run_fit.sh {{GPU}}', 'fit', cwd=H / '{P}/m2_lineage', log='fit.log')
-run(f'{{PY}} fit_scvi.py', 'fit', cwd=H / '{P}/m2_lineage', log='scvi.log')"""),
+run(f'{{PY}} fit_scvi.py', 'baseline', cwd=H / '{P}/m2_lineage', log='scvi.log')"""),
         ('md', '## 3 Lineage tests T1-T5 (z vs s vs scVI)'),
         ('code', f"""run(f'{{PY}} {P}/m2_lineage/lineage_test.py', 'analysis', log='{P}/m2_lineage/lineage_test.out')
 import pandas as pd; pd.read_csv(H / '{P}/m2_lineage/lineage_test_summary.csv').round(3)"""),
@@ -96,15 +96,15 @@ for root, (mode, lam, run_dir) in RUNS.items():
         run(f'{PY} aggregate_haruka_latent_cellcharter.py --data {d} --input_dir {root}/mouse_brain_{s}_paired/{run_dir} --output_dir {root}_cc/mouse_brain_{s}_paired/haruka_z_s_cellcharter_seed0', 'analysis', cwd=B)
         run(f'{PY} score_pair_direct_kmeans.py --data {d} --emb_dir {root}_cc/mouse_brain_{s}_paired/haruka_z_s_cellcharter_seed0', 'analysis', cwd=B)
 run(f'{PY} summarize_composition_gated_lambda_sweep.py --base . --lambdas 10 25 --sections ' + ' '.join(SECTIONS) + ' --seed 0 --max_cv_cells 10000 --out_dir results_shared_full_niche_compgated_lambda_sweep', 'analysis', cwd=B)"""),
-        ('md', '## 3 Baselines: scVI / ContrastiveVI / expression + CellCharter, CINEMA-OT (env `vio`)'),
+        ('md', '## 3 Baselines: scVI / ContrastiveVI / expression + CellCharter, CINEMA-OT (env `vio`). `baseline` stage, off by default: their scored results are downloaded in section 0'),
         ('code', """for s in SECTIONS:
     d = f'data_composition_pairs_all/mouse_brain_{s}_paired.h5ad'; root = 'results_direct_kmeans' if s == 'A8' else 'results_cross_section'
-    run(f'{PY} {H}/bench_merfish/run_baselines_2x2.py --data {d} --methods pca cellcharter contrastivevi --out_root {root}/baselines --seed 0 --max_epochs 150 --batch_size 2048', 'fit', cwd=B)
+    run(f'{PY} {H}/bench_merfish/run_baselines_2x2.py --data {d} --methods pca cellcharter contrastivevi --out_root {root}/baselines --seed 0 --max_epochs 150 --batch_size 2048', 'baseline', cwd=B)
     cine = f'{root}/cinema_minibatch/mouse_brain_{s}_paired/cinemaot_minibatch_b2048_e3_seed0'
-    run(f'{PY_VIO} {H}/bench_merfish/run_cinemaot_minibatch.py --data {d} --out_root {root}/cinema_minibatch --seed 0 --dim 20 --thres 0.15 --transport_batch_size 2048 --n_ensembles 3', 'fit', cwd=B)
-    run(f'{PY} {H}/bench_merfish/cc_add_spatial.py --data {d} --result_dir {cine}', 'analysis', cwd=B)
-    run(f'{PY} score_composition_controls.py --data {d} --out {root}/composition_controls_{s}.json --k_niche 20 --seed 0 --n_init 20', 'analysis', cwd=B)
-    run(f'for e in {root}/baselines/mouse_brain_{s}_paired/*/ {cine}; do {PY} score_pair_direct_kmeans.py --data {d} --emb_dir $e; done', 'analysis', cwd=B)
+    run(f'{PY_VIO} {H}/bench_merfish/run_cinemaot_minibatch.py --data {d} --out_root {root}/cinema_minibatch --seed 0 --dim 20 --thres 0.15 --transport_batch_size 2048 --n_ensembles 3', 'baseline', cwd=B)
+    run(f'{PY} {H}/bench_merfish/cc_add_spatial.py --data {d} --result_dir {cine}', 'baseline', cwd=B)
+    run(f'{PY} score_composition_controls.py --data {d} --out {root}/composition_controls_{s}.json --k_niche 20 --seed 0 --n_init 20', 'baseline', cwd=B)
+    run(f'for e in {root}/baselines/mouse_brain_{s}_paired/*/ {cine}; do {PY} score_pair_direct_kmeans.py --data {d} --emb_dir $e; done', 'baseline', cwd=B)
 # per-section haruka/cinema result jsons are listed in results_cross_section/summary/per_section_metrics.csv (result_json)
 run(f'{PY} summarize_all_cross_section_methods.py', 'analysis', cwd=B)
 run(f'{PY} build_lambda25_comparison.py', 'analysis', cwd=B)"""),
@@ -156,7 +156,7 @@ run(f'{PY} radial_null.py all7_no_oligo', 'analysis', cwd=PS)"""),
         ('md', '## 4 STARmap shifted-plaque null (with scVI), s beyond z, counterfactual proportions, cross-species markers, domains'),
         ('code', f"""SR = H / 'bench_real_discovery/starmap_plaque_radial'
 SSEED = H / 'results_seedcheck/starmap/ad/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed'
-run(f'{{PY}} fit_scvi.py', 'fit', cwd=SR)
+run(f'{{PY}} fit_scvi.py', 'baseline', cwd=SR)   # scVI baseline (off: latent downloaded in section 0)
 run(f'{{PY}} starmap_null.py', 'analysis', cwd=SR)
 for k in [1, 2]:
     run(f'{{PY}} starmap_null.py', 'analysis', cwd=SR, env={{'MODEL_DIR': f'{{SSEED}}{{k}}', 'TAG': f'_seed{{k}}'}})

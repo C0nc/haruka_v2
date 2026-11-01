@@ -22,7 +22,9 @@ ENV = {**os.environ, 'NUMPY_MADVISE_HUGEPAGE': '0', 'OPENBLAS_NUM_THREADS': '8',
        'CUDA_VISIBLE_DEVICES': GPU}
 
 # Stage switches. data = rebuild the inputs from the raw public releases (off: the Hugging Face copies replace it).
-_ON = {'download': '1', 'data': '0', 'fit': '1', 'analysis': '1', 'figure': '1'}
+# baseline = refit/rescore the comparison methods (scVI, ContrastiveVI, CINEMA-OT, expression); off: their saved
+# results are downloaded, so only the Haruka results are reproduced.
+_ON = {'download': '1', 'data': '0', 'fit': '1', 'baseline': '0', 'analysis': '1', 'figure': '1'}
 if os.environ.get('HARUKA_FIGURE_ONLY') == '1':
     _ON = {**{k: '0' for k in _ON}, 'figure': '1'}
 STAGES = {s: os.environ.get(f'RUN_{s.upper()}', d) == '1' for s, d in _ON.items()}
@@ -93,6 +95,21 @@ def fetch_fitted(hf_file, fit_dir):
     json.dump(json.loads(A.uns['haruka']['fit_arguments_json']), open(fit_dir / 'meta.json', 'w'), indent=2)
     print(f'[fitted] {hf_file} -> {fit_dir} ({int(m.sum())} cells)')
     return fit_dir
+
+
+def fetch_baselines(hf_file):
+    """Download the saved baseline results (comparison methods) and extract them into the repository, so the Haruka
+    analyses and figures can be redrawn without refitting the baselines. Skipped when the baseline stage is on;
+    files already present are kept."""
+    import tarfile
+    if not STAGES['download'] or STAGES['baseline']:
+        print(f'[skip: {"download stage off" if not STAGES["download"] else "baseline stage on (refit)"}] {hf_file}')
+        return
+    from huggingface_hub import hf_hub_download
+    with tarfile.open(hf_hub_download(HF_REPO, hf_file, repo_type='dataset', local_dir=H / 'hf_data')) as t:
+        new = [m for m in t.getmembers() if m.isfile() and not (H / m.name).exists()]
+        t.extractall(H, members=new, filter='data')
+    print(f'[baselines] {hf_file}: {len(new)} files extracted')
 
 
 def require(*paths):
