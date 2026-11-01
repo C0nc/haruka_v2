@@ -3,7 +3,7 @@
 # usage: run_wholeslice_fit.sh <variant: all7_no_oligo|full3> <gpu>
 set -euo pipefail
 V=$1; export CUDA_VISIBLE_DEVICES=$2
-ROOT=${HARUKA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)}
+ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}
 PY=${HARUKA_PY:-python}
 RUNNER=$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py
 CC=$ROOT/bench_kras_xenium/rebuild_condition_only_salient_cc.py

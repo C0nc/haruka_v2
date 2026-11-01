@@ -136,7 +136,7 @@ The exact command for each is in that figure's notebook."""),
 `condition_composition.npy` D([z,s]), `salient_composition_shift.npy`, `meta.json` (all arguments + timings),
 optionally `model/` and `null_shuffled_s_composition_shift_{k}.npy`."""),
         ('code', """import json
-m = json.load(open(H / 'results_kras_te_null/mouselung_kras_xenium_clean_noC3/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed0/meta.json'))
+m = json.load(open(H / 'notebooks/kras_default_fit_meta.json'))   # copy of the KRAS fit's meta.json
 {k: m[k] for k in list(m)[:40] if not isinstance(m[k], (list, dict))}"""),
     ],
     figures=[],

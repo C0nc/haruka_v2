@@ -3,7 +3,7 @@
 # usage: run_seed.sh <starmap|codex> <seed> <gpu>
 set -euo pipefail
 D=$1; SEED=$2; export CUDA_VISIBLE_DEVICES=$3
-ROOT=${HARUKA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)}; PY=${HARUKA_PY:-python}
+ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}; PY=${HARUKA_PY:-python}
 RUNNER=$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py
 common=(--seed "$SEED" --max_epochs 150 --n_latent 32 --n_hidden 256 --n_layers 1 --decoder_layers 2
   --k_niche 20 --neighbor_embedding_dim 16 --composition_loss_weight 1 --neighbor_mean_loss_weight 1

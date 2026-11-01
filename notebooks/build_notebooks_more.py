@@ -18,7 +18,7 @@ vascular cells: VLMC, VSMC, endothelium), z does not (r = -0.17).""",
 require(WK / '{FIT_EX}/background.npy', WK / '{FIT_EX}/salient.npy')"""),
         ('md', '## 3 Spatial Aging Clock on observed expression (github sunericd/SpatialAgingClock @ 2b832f4)'),
         ('code', """CLK = 'bench_oskm_reprogramming/external/SpatialAgingClock'
-run(f'[ -d {CLK} ] || (git clone -q https://github.com/sunericd/SpatialAgingClock {CLK} && git -C {CLK} checkout -q 2b832f4)', 'download')
+run(f'[ -d {CLK} ] || (mkdir -p {CLK} && curl -sSL https://github.com/sunericd/SpatialAgingClock/archive/2b832f43da5c9426f246178a557d0b688e4b0546.tar.gz | tar -xz --strip-components=1 -C {CLK})', 'download')  # pinned commit 2b832f4
 run(f'{PY} bench_exercise/run_clock_exercise.py', 'analysis', log='bench_exercise/clock.log')"""),
         ('md', """## 4 Held-out clock prediction from z and s; within-vascular partition; panels
 `make_exercise_clock_shift.py` reuses `oof_clock_predictions_w10_s100.csv.gz` if present: move it away for a true rerun."""),

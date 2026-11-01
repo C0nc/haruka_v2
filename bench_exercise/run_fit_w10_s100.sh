@@ -3,7 +3,7 @@
 # z-s independence 10, spatial weight 100; other settings as the OSKM pair-batch fit. Saves model + 3 shuffled-s nulls.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES=${1:-4}
-ROOT=${HARUKA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)}; PY=${HARUKA_PY:-python}
+ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}; PY=${HARUKA_PY:-python}
 env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "$PY" "$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py" \
   --data ${HARUKA_WORK:-/project/zhihuanglab/yancui}/haruka_exercise/data/exercise_old_full.h5ad --batch_size 32768 \
   --sample_key slice_id --batch_key run_batch --condition_key condition --target_label exercise --cell_type_key cell_type \

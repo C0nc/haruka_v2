@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES=${1:-6}
-ROOT=${HARUKA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel)}; PY=${HARUKA_PY:-python}; D=$ROOT/bench_petracer_lineage/m2_lineage
+ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}; PY=${HARUKA_PY:-python}; D=$ROOT/bench_petracer_lineage/m2_lineage
 env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "$PY" "$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py" \
   --data "$D/petracer_M2-1_lineage.h5ad" --batch_size 4096 --sample_key slice_id --batch_key slice_id \
   --condition_key condition --target_label disease --exclude_label halo --cell_type_key cell_type \
