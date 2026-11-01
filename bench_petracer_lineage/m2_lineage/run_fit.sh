@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export CUDA_VISIBLE_DEVICES=${1:-6}
+export CUDA_VISIBLE_DEVICES=${1-${CUDA_VISIBLE_DEVICES-0}}
 ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}; PY=${HARUKA_PY:-python}; D=$ROOT/bench_petracer_lineage/m2_lineage
 env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "$PY" "$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py" \
   --data "$D/petracer_M2-1_lineage.h5ad" --batch_size 4096 --sample_key slice_id --batch_key slice_id \

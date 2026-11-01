@@ -3,7 +3,7 @@
 # additionally saving the trained model and 3 shuffled-s null composition shifts (s permuted among treated cells
 # within slice x cell type, z kept) for the "does baseline z predict the treatment effect" test.
 set -euo pipefail
-export CUDA_VISIBLE_DEVICES=${1:-4}
+export CUDA_VISIBLE_DEVICES=${1-${CUDA_VISIBLE_DEVICES-0}}
 ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}; PY=${HARUKA_PY:-python}
 env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 "$PY" "$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py" \
   --data "$ROOT/data/mouselung_kras_xenium_clean_noC3.h5ad" --batch_size 32768 \

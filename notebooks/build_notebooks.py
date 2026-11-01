@@ -19,7 +19,7 @@ DEFAULT_ARGS = """--seed 0 --max_epochs 150 \\
   --augmentation_mode sparse --num_workers 4 --direct_only"""
 
 HEADER = """import sys, pathlib; sys.path.insert(0, str(next(p for p in [pathlib.Path.cwd(), pathlib.Path.cwd() / 'notebooks'] if (p / 'repro.py').exists())))
-from repro import run, require, show, fetch, fetch_fitted, fetch_baselines, STAGES, H, WK, PY, PY_VIO, GPU
+from repro import run, require, show, fetch, fetch_tree, fetch_fitted, fetch_baselines, STAGES, H, WK, PY, PY_VIO, GPU
 # Default: download inputs + the paper's fitted Haruka outputs from Hugging Face, then analyses -> figure.
 # The Haruka fit step reuses the unpacked fit; HARUKA_REFIT=1 (env) refits from scratch. Other Haruka fits (ablations,
 # extra seeds) run. Baseline methods are not refitted: their saved results are downloaded (RUN_BASELINE=1 refits them).
@@ -39,7 +39,9 @@ def notebook(name, title, intro, steps, figures):
         cells.append(md('## 0 Preprocessed data (Hugging Face)\n\nThe ready-to-fit inputs are read directly from '
                         f'[{HF_REPO}](https://huggingface.co/datasets/{HF_REPO}) (cached in `hf_data/`) and linked to the '
                         'paths the scripts read. The data stage below rebuilds the same files from the raw releases and is off by default.'))
-        cells.append(code('\n'.join(f"fetch('{f}', {dst})" for f, dst in HF_FILES[name])))
+        cells.append(code('\n'.join(f"fetch('{f}', {dst})" for f, dst in HF_FILES[name])
+                          + ("\nfetch_tree('03_fig3_ad_plaque/codex_abeta_objects.tar.gz')   # CODEX-CNS amyloid-beta plaque objects (5 donors)"
+                             if name == '03_fig3_ad_plaque' else '')))
         cells.append(md('The paper\'s default Haruka fit, published as fitted AnnData (input + z, s, predicted neighbourhoods; '
                         'see the dataset card). It is unpacked into the fit folder, so the fit step below reuses it. '
                         'Set `HARUKA_REFIT=1` before launching to refit instead.'))

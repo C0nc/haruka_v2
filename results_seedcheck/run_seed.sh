@@ -2,7 +2,7 @@
 # Seed robustness for the plaque-radial z-vs-s result: default Haruka, only --seed changes.
 # usage: run_seed.sh <starmap|codex> <seed> <gpu>
 set -euo pipefail
-D=$1; SEED=$2; export CUDA_VISIBLE_DEVICES=$3
+D=$1; SEED=$2; export CUDA_VISIBLE_DEVICES=${3-${CUDA_VISIBLE_DEVICES-0}}
 ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}; PY=${HARUKA_PY:-python}
 RUNNER=$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py
 common=(--seed "$SEED" --max_epochs 150 --n_latent 32 --n_hidden 256 --n_layers 1 --decoder_layers 2

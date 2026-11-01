@@ -2,7 +2,7 @@
 # Haruka default (composition-gated, lambda=10, decoder-only donor batch) on a whole-slice CODEX variant.
 # usage: run_wholeslice_fit.sh <variant: all7_no_oligo|full3> <gpu>
 set -euo pipefail
-V=$1; export CUDA_VISIBLE_DEVICES=$2
+V=$1; export CUDA_VISIBLE_DEVICES=${2-${CUDA_VISIBLE_DEVICES-0}}
 ROOT=${HARUKA_ROOT:-$(d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); while [ ! -f "$d/notebooks/repro.py" ]; do d=$(dirname "$d"); done; echo "$d")}
 PY=${HARUKA_PY:-python}
 RUNNER=$ROOT/bench_kras_xenium/run_haruka_separate_batch_heads.py

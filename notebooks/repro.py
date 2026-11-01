@@ -101,15 +101,21 @@ def fetch_baselines(hf_file):
     """Download the saved baseline results (comparison methods) and extract them into the repository, so the Haruka
     analyses and figures can be redrawn without refitting the baselines. Skipped when the baseline stage is on;
     files already present are kept."""
+    if STAGES['baseline']:
+        print(f'[skip: baseline stage on (refit)] {hf_file}'); return
+    fetch_tree(hf_file)
+
+
+def fetch_tree(hf_file):
+    """Download a .tar.gz of repository-relative files and extract it into the repository (existing files kept)."""
     import tarfile
-    if not STAGES['download'] or STAGES['baseline']:
-        print(f'[skip: {"download stage off" if not STAGES["download"] else "baseline stage on (refit)"}] {hf_file}')
-        return
+    if not STAGES['download']:
+        print(f'[skip: download stage off] {hf_file}'); return
     from huggingface_hub import hf_hub_download
     with tarfile.open(hf_hub_download(HF_REPO, hf_file, repo_type='dataset', local_dir=H / 'hf_data')) as t:
         new = [m for m in t.getmembers() if m.isfile() and not (H / m.name).exists()]
         t.extractall(H, members=new, filter='data')
-    print(f'[baselines] {hf_file}: {len(new)} files extracted')
+    print(f'[download] {hf_file}: {len(new)} files extracted')
 
 
 def require(*paths):

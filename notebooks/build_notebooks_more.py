@@ -145,7 +145,7 @@ for ds in ['starmap', 'codex']:
     for seed in [1, 2]:
         run(f'bash results_seedcheck/run_seed.sh {{ds}} {{seed}} {{GPU}}', 'fit')"""),
         ('md', '## 3 Plaque distances (model-independent) and CODEX radial / null analyses'),
-        ('code', """# STARmap plaque distances: ad_analysis/plot_plaque_distance_spatial.py -> final_results_nb/starmap_ad/biology/plaque_distance/starmap_plaque_distance_cells.csv.gz
+        ('code', """run(f'{PY} ad_analysis/plot_plaque_distance_spatial.py --starmap bench_real_discovery/data/ad.h5ad --out final_results_nb/starmap_ad/biology/plaque_distance', 'analysis')
 require(H / 'final_results_nb/starmap_ad/biology/plaque_distance/starmap_plaque_distance_cells.csv.gz')
 PS = W / 'plaque_states'; SEED = H / 'results_seedcheck/codex/codex_wholeslice_all7_no_oligo/haruka_shared_full_niche_compgated_decoderbatch8_batchmode-decoder_only_seed'
 run(f'{PY} build_plaque_niches.py', 'analysis', cwd=PS)

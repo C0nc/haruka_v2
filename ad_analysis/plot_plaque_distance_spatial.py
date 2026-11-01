@@ -162,13 +162,14 @@ def plot_codex(data_path: Path, plaque_dir: Path, out: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--starmap", required=True, type=Path)
-    parser.add_argument("--codex", required=True, type=Path)
-    parser.add_argument("--codex-plaque-dir", required=True, type=Path)
+    parser.add_argument("--codex", type=Path, help="optional: also write the CODEX dense/diffuse distances")
+    parser.add_argument("--codex-plaque-dir", type=Path)
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     plot_starmap(args.starmap, args.out)
-    plot_codex(args.codex, args.codex_plaque_dir, args.out)
+    if args.codex is not None:
+        plot_codex(args.codex, args.codex_plaque_dir, args.out)
 
 
 if __name__ == "__main__":
